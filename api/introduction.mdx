@@ -1,0 +1,136 @@
+---
+title: "Lightdash REST API — Overview and Reference"
+description: "Learn the core concepts of the Lightdash REST API: base URL, versioning, request/response format, authentication, and error codes."
+---
+
+The Lightdash REST API gives you programmatic access to every resource in your Lightdash instance — projects, charts, dashboards, spaces, users, groups, scheduled deliveries, and query execution. All API communication uses JSON over HTTPS, and every response follows a consistent envelope that makes error handling straightforward to implement.
+
+## Base URL
+
+Replace `your-lightdash-instance.com` with the hostname of your Lightdash deployment. For Lightdash Cloud, this is your assigned subdomain (for example, `app.lightdash.cloud`).
+
+```
+https://your-lightdash-instance.com/api/v1
+```
+
+<Note>
+Some newer endpoints are available under `/api/v2`. These are documented on the relevant reference pages and are clearly labeled with their version prefix.
+</Note>
+
+## API versioning
+
+The current stable API version is **v1**. The v1 surface is used throughout this reference. A small number of newer, async-first endpoints are available under **v2** (`/api/v2/projects/{projectUuid}/query`, for example). The v1 and v2 surfaces coexist — you can call both within the same application.
+
+Lightdash does not silently deprecate or break endpoints without prior notice. Deprecated routes are still served and will log a warning in the response; check the [changelog](https://github.com/lightdash/lightdash/releases) before upgrading your instance.
+
+## Request format
+
+All write requests (`POST`, `PATCH`, `PUT`) must send a JSON body and set the `Content-Type` header accordingly.
+
+```bash
+curl --request POST \
+  --url "https://your-lightdash-instance.com/api/v1/projects/{projectUuid}/refresh" \
+  --header "Authorization: ApiKey ldpat_your_token" \
+  --header "Content-Type: application/json"
+```
+
+Query parameters are accepted on `GET` requests using standard URL encoding.
+
+## Response format
+
+Every API response — success or error — is wrapped in the same envelope:
+
+```json
+{
+  "status": "ok",
+  "results": { ... }
+}
+```
+
+On error, `status` becomes `"error"` and `results` is replaced by an `error` object:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "name": "NotFoundError",
+    "statusCode": 404,
+    "message": "Project not found",
+    "data": {}
+  }
+}
+```
+
+<ResponseField name="status" type="string" required>
+  `"ok"` on success, `"error"` on failure.
+</ResponseField>
+
+<ResponseField name="results" type="object | array">
+  The payload for successful responses. Shape varies by endpoint.
+</ResponseField>
+
+<ResponseField name="error" type="object">
+  Present only when `status` is `"error"`.
+
+  <Expandable title="error properties">
+    <ResponseField name="name" type="string">
+      Machine-readable error class name (e.g., `NotFoundError`, `ForbiddenError`).
+    </ResponseField>
+    <ResponseField name="statusCode" type="number">
+      HTTP status code mirrored from the response header.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable description of what went wrong.
+    </ResponseField>
+    <ResponseField name="data" type="object">
+      Optional additional context about the error.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Common HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Success |
+| `201` | Resource created |
+| `204` | Success with no response body |
+| `400` | Bad request — invalid parameters or malformed JSON |
+| `401` | Unauthorized — missing or invalid authentication token |
+| `403` | Forbidden — authenticated but lacking permission |
+| `404` | Not found — resource does not exist or is not accessible |
+| `500` | Internal server error — unexpected failure on the server |
+
+## Rate limiting
+
+Lightdash Cloud does not enforce a hard API rate limit at this time. Self-hosted instances inherit the rate-limiting behavior of any reverse proxy you configure in front of Lightdash (nginx, Caddy, AWS ALB, etc.). Heavy query workloads are naturally throttled by your data warehouse's concurrency limits.
+
+<Tip>
+For long-running query jobs, use the async v2 query endpoints and poll for results rather than keeping a connection open. This is more resilient under load.
+</Tip>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to generate Personal Access Tokens and authenticate API requests.
+  </Card>
+  <Card title="Projects" icon="folder" href="/api/projects">
+    List, create, and refresh projects in your organization.
+  </Card>
+  <Card title="Charts & Dashboards" icon="chart-bar" href="/api/charts-dashboards">
+    Manage saved charts and dashboards programmatically.
+  </Card>
+  <Card title="Explore & Query" icon="database" href="/api/explore">
+    Run metric queries and raw SQL against your warehouse.
+  </Card>
+  <Card title="Spaces" icon="layout-grid" href="/api/spaces">
+    Organize content and control who can access it.
+  </Card>
+  <Card title="Users & Groups" icon="users" href="/api/users-groups">
+    Manage org members, invite links, and user groups.
+  </Card>
+  <Card title="Scheduler" icon="clock" href="/api/scheduler">
+    Automate chart and dashboard deliveries on a cron schedule.
+  </Card>
+</CardGroup>

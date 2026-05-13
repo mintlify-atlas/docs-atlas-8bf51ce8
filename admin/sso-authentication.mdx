@@ -1,0 +1,128 @@
+---
+title: "SSO and Authentication Settings for Lightdash"
+description: "Configure single sign-on with Google, Okta, Azure AD, OneLogin, or generic OIDC providers to control how users authenticate to your Lightdash organization."
+---
+
+Lightdash supports single sign-on through several identity providers, letting users authenticate with their existing company accounts instead of managing a separate password. As an admin, you control which SSO method is active, which email domains it applies to, and whether users can still log in with a password alongside SSO.
+
+## Supported SSO providers
+
+Lightdash can authenticate users through any of the following identity providers:
+
+| Provider | Notes |
+|---|---|
+| **Google** | Standard Google OAuth for Workspace or personal accounts |
+| **Okta** | Okta OIDC integration |
+| **OneLogin** | OneLogin OIDC integration |
+| **Azure AD / Microsoft Entra ID** | Supports per-organization tenant configuration |
+| **Generic OIDC** | Any OIDC-compatible provider not listed above |
+
+<Info>
+  The SSO providers available to your organization depend on how your Lightdash instance was deployed. On Lightdash Cloud, contact your account team to enable a specific provider. On self-hosted instances, your deployment team configures provider availability at the infrastructure level.
+</Info>
+
+## How SSO login works for users
+
+When SSO is enabled for your organization, the login experience changes:
+
+1. A user navigates to your Lightdash instance and enters their email address.
+2. Lightdash checks whether the email domain matches a configured SSO provider for your organization.
+3. If it matches, the user is shown the appropriate SSO button (or automatically redirected, if it's the only option).
+4. The user authenticates with the identity provider and is returned to Lightdash as a logged-in session.
+
+Users do not need to know any Lightdash-specific password if SSO is their only sign-in method. Their identity provider credentials are the sole factor.
+
+## Azure AD / Microsoft Entra ID setup
+
+Azure AD supports per-organization configuration, meaning each Lightdash organization on a shared instance can connect to its own Azure tenant. This configuration is managed entirely in the Lightdash admin panel.
+
+<Note>
+  The Azure AD SSO settings panel is available only when the `sso-organization-settings` feature is enabled for your organization. On Lightdash Cloud, ask your account team to enable it. On self-hosted instances, set the environment variable `ENABLED_FEATURE_FLAGS=sso-organization-settings`.
+</Note>
+
+### Configuring Azure AD SSO
+
+<Steps>
+  <Step title="Open the SSO settings panel">
+    Go to **Settings → Organization → Single Sign-On**. You will see the Azure AD configuration form if the feature is enabled for your organization.
+  </Step>
+  <Step title="Enter your Azure application credentials">
+    Fill in the following fields with values from your Azure App Registration:
+
+    - **Application (client) ID** — the UUID shown on the App Registration overview page in the Azure portal
+    - **Directory (tenant) ID** — the tenant UUID, also on the App Registration overview
+    - **Client secret value** — the secret value (not the secret ID) generated under **Certificates & secrets** in the Azure portal
+
+    <Warning>
+      The client secret value is write-only in Lightdash. Once saved, you will only see a confirmation that a secret is stored, not the value itself. Keep a copy in a secure location.
+    </Warning>
+  </Step>
+  <Step title="Enable the method">
+    Toggle **Enabled** on. While this is off, the Azure AD option is not shown to any users even if all other settings are configured.
+  </Step>
+  <Step title="Configure email domain matching">
+    By default, Lightdash uses your organization's existing **allowed email domains** list to decide which users see the Azure AD login option. If you want to use a different list of domains specifically for Azure AD:
+
+    - Tick **Override organization's allowed email domains**
+    - Enter the domains that should see the Azure AD login button (e.g., `acme.com`)
+
+    Leave this unticked to inherit the organization-wide allowed domains setting.
+  </Step>
+  <Step title="Decide on password sign-in">
+    Tick **Allow password sign-in for users matching this method** if you want users in the matched domains to be able to use an email/password login alongside Azure AD. If this is unticked, only the Azure AD button is shown to matched users — no password input is displayed.
+  </Step>
+</Steps>
+
+### What users see after configuration
+
+Once Azure AD is enabled and email domains are configured, users with a matching domain will see the Azure AD login option when they enter their email. If password sign-in is disabled, the password field is hidden entirely and only the Azure button is shown.
+
+New users (no existing Lightdash account) are automatically redirected to Azure if Azure AD is the only configured method for their domain.
+
+## Restricting sign-up by email domain
+
+To prevent users with arbitrary email addresses from joining your organization, you can configure an allowed email domains list. Only addresses from the listed domains can sign up or be invited.
+
+Go to **Settings → Organization → General** and find the **Allowed email domains** field. Enter one or more domains (e.g., `acme.com`, `acme.io`). This list applies both to email/password sign-up and SSO-based sign-up.
+
+<Warning>
+  Changing or clearing the allowed email domains list takes effect immediately. Users with non-matching emails who are already members of the organization are not removed, but new sign-ups from non-matching domains will be blocked.
+</Warning>
+
+## Auto-assigning roles to SSO users
+
+When a new user signs up through SSO, they receive the organization's **default role**. You can configure this under **Settings → Organization → General** in the **Default role for new members** field.
+
+Common practice is to set the default to `member` (no project access) and then explicitly add users to projects or groups. This prevents new SSO sign-ups from automatically gaining access to all projects.
+
+## Disabling email/password login
+
+If you want all users in a matched domain to authenticate exclusively through SSO, disable the **Allow password sign-in** option in your SSO provider settings (see step 5 of the [Azure AD setup](#configuring-azure-ad-sso) above, or the equivalent setting for other providers).
+
+When password sign-in is disabled for a domain:
+
+- Users who enter an email in that domain are shown only the SSO button
+- The password input field is hidden entirely
+- Users cannot reset their password to regain email/password access
+
+<Note>
+  If multiple SSO methods are configured and they disagree on whether to show the password field, the lenient rule applies: if **any** matching method allows password sign-in, the password input is shown.
+</Note>
+
+## Troubleshooting common SSO issues
+
+<Accordion title="Users see the password login instead of the SSO button">
+  This usually means the user's email domain is not in the allowed domains list for your SSO method. Check **Settings → Organization → Single Sign-On** and verify that the domain is listed. If you are using the organization-wide allowed domains (not overriding them), also check **Settings → Organization → General → Allowed email domains**.
+</Accordion>
+
+<Accordion title="An existing user in a different organization sees the wrong SSO option">
+  Lightdash scopes SSO discovery to the organizations a user already belongs to. If a user is a member of organization A but your SSO is configured on organization B, they will not be offered your SSO option. They must first be invited to your organization.
+</Accordion>
+
+<Accordion title="New users are not automatically redirected to SSO">
+  Auto-redirect only happens when SSO is the single option for the user's domain and no password sign-in is allowed. If multiple options are available (including password), the user sees a choice screen instead.
+</Accordion>
+
+<Accordion title="Config changes (rotated secret) are not taking effect immediately">
+  The resolved SSO strategy is cached for up to 10 minutes. After rotating a client secret and saving the new value in Lightdash, allow up to 10 minutes for the new secret to take effect. Users who are currently mid-login may see errors during this window.
+</Accordion>

@@ -1,0 +1,132 @@
+---
+title: "REST API endpoints for running queries"
+description: "Run metric queries and raw SQL against your warehouse via the Lightdash API. Covers the runQuery, runSqlQuery, and catalog endpoints."
+---
+
+The explore API lets you run queries programmatically — either metric queries defined by Lightdash dimensions and metrics, or raw SQL queries directly against your warehouse.
+
+## Run a metric query
+
+Executes a structured metric query against an explore and returns rows.
+
+```bash
+POST /api/v1/projects/{projectUuid}/explores/{exploreName}/runQuery
+```
+
+**Request body:**
+
+```json
+{
+  "dimensions": ["orders_order_date_month", "orders_status"],
+  "metrics": ["orders_total_revenue", "orders_count"],
+  "filters": {
+    "dimensions": {
+      "id": "filter-group-1",
+      "and": [
+        {
+          "id": "filter-1",
+          "target": { "fieldId": "orders_status" },
+          "operator": "equals",
+          "values": ["completed"]
+        }
+      ]
+    },
+    "metrics": {}
+  },
+  "sorts": [
+    { "fieldId": "orders_order_date_month", "descending": false }
+  ],
+  "limit": 500,
+  "tableCalculations": [],
+  "additionalMetrics": []
+}
+```
+
+```bash
+curl -X POST \
+  https://your-lightdash.com/api/v1/projects/abc-123/explores/orders/runQuery \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"dimensions":["orders_status"],"metrics":["orders_count"],"filters":{},"sorts":[],"limit":100,"tableCalculations":[]}'
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": {
+    "rows": [
+      {
+        "orders_status": "completed",
+        "orders_count": 1423
+      }
+    ],
+    "fields": {
+      "orders_status": { "type": "dimension", "label": "Status" },
+      "orders_count": { "type": "metric", "label": "Count of Orders" }
+    },
+    "metricQuery": { ... },
+    "appliedDashboardFilters": []
+  }
+}
+```
+
+<Note>
+Field IDs follow the pattern `{exploreName}_{fieldName}`. For example, a dimension `status` on the `orders` explore has field ID `orders_status`.
+</Note>
+
+## Run raw SQL
+
+Executes a raw SQL query using the project's warehouse credentials.
+
+```bash
+POST /api/v1/projects/{projectUuid}/runSqlQuery
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/runSqlQuery \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"sql": "SELECT status, COUNT(*) as cnt FROM orders GROUP BY status LIMIT 100"}'
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": {
+    "fields": {
+      "status": { "type": "string" },
+      "cnt": { "type": "number" }
+    },
+    "rows": [
+      { "status": "completed", "cnt": 1423 }
+    ]
+  }
+}
+```
+
+## Get the data catalog
+
+Returns all explores, dimensions, and metrics available in a project.
+
+```bash
+GET /api/v1/projects/{projectUuid}/catalog
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123/catalog \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+Use the catalog to discover available field IDs before constructing metric queries.
+
+## Async queries
+
+For long-running queries, use the async query endpoint which returns a job ID you can poll.
+
+```bash
+POST /api/v1/projects/{projectUuid}/explores/{exploreName}/runQuery
+```
+
+Pass `"csvLimit": null` in the body to trigger async execution for large result sets. Poll `GET /api/v1/jobs/{jobId}` for status.

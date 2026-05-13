@@ -1,0 +1,585 @@
+---
+title: "Defining Metrics and Dimensions in dbt YAML"
+description: "Add Lightdash meta blocks to your dbt model YAML to define typed dimensions, aggregate metrics, and joins that power every explore in Lightdash."
+---
+
+Every field you see in a Lightdash explore—every filter, every axis, every aggregate—originates from a `meta` block in your dbt model YAML. Lightdash reads your compiled `manifest.json` and converts those `meta` blocks into a typed field catalog. You do not write SQL in Lightdash; you write it once in dbt and Lightdash exposes it as a governed, reusable set of dimensions and metrics that any analyst can query without touching SQL.
+
+This page covers the full shape of those `meta` blocks: what fields are available, what each property does, and how to write YAML that produces well-behaved explores.
+
+---
+
+## Dimensions vs. metrics
+
+**Dimensions** are attributes of a row. They are used to filter, group, and label query results. A dimension maps to a column (or a SQL expression over a column) in your model. Examples: `user_id`, `country`, `signup_date`, `is_active`.
+
+**Metrics** are aggregations. They reduce many rows to a single number (or date, or string). A metric always contains an aggregate function. Examples: `count of orders`, `sum of revenue`, `average session duration`.
+
+In Lightdash, you define both inside the `meta` block of a dbt model or column. The structure looks like this:
+
+```yaml
+models:
+  - name: orders
+    meta:
+      # Model-level configuration (joins, labels, model-scoped metrics)
+    columns:
+      - name: status
+        meta:
+          dimension:   # Override how this column behaves as a dimension
+            type: string
+          metrics:     # Aggregations derived from this column
+            order_count:
+              type: count
+```
+
+---
+
+## Dimension types
+
+The `DimensionType` enum in the Lightdash source defines five types. Use them in `meta.dimension.type` or `meta.additional_dimensions.<name>.type`:
+
+| Type | Use for |
+|---|---|
+| `string` | Text values, IDs, category labels |
+| `number` | Integer and decimal numeric values |
+| `date` | Calendar dates without time (`YYYY-MM-DD`) |
+| `timestamp` | Date and time values with timezone awareness |
+| `boolean` | True/false flags |
+
+<Note>
+If you omit `type`, Lightdash infers it from the column's warehouse data type. It is best practice to explicitly declare `type` to ensure consistent behavior across warehouse dialects.
+</Note>
+
+### Timestamp time intervals
+
+When a column has type `date` or `timestamp`, Lightdash automatically generates sub-dimensions for each time grain. The default set is `DAY`, `WEEK`, `MONTH`, `QUARTER`, and `YEAR`. You can customize this with `time_intervals`:
+
+```yaml
+columns:
+  - name: created_at
+    meta:
+      dimension:
+        type: timestamp
+        time_intervals:
+          - RAW        # The original timestamp value
+          - HOUR
+          - DAY
+          - WEEK
+          - MONTH
+          - QUARTER
+          - YEAR
+```
+
+Set `time_intervals: 'OFF'` to suppress all sub-dimensions and expose only the raw column.
+
+Available intervals: `RAW`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`, `MONTH`, `QUARTER`, `YEAR`, `WEEK_NUM`, `MONTH_NUM`, `MONTH_NAME`, `QUARTER_NUM`, `QUARTER_NAME`, `YEAR_NUM`, `DAY_OF_WEEK_INDEX`, `DAY_OF_WEEK_NAME`, `DAY_OF_MONTH_NUM`, `DAY_OF_YEAR_NUM`, `HOUR_OF_DAY_NUM`, `MINUTE_OF_HOUR_NUM`.
+
+---
+
+## Metric types
+
+The `MetricType` enum defines the following types. Use them in `meta.metrics.<name>.type` (column-level) or `meta.metrics.<name>.type` inside `meta` at the model level:
+
+### Aggregate metrics
+
+These perform SQL aggregate functions:
+
+| Type | SQL equivalent | Notes |
+|---|---|---|
+| `count` | `COUNT(${TABLE}.column)` | Counts non-null rows |
+| `count_distinct` | `COUNT(DISTINCT ${TABLE}.column)` | Counts unique values |
+| `sum` | `SUM(${TABLE}.column)` | Requires a numeric column |
+| `average` | `AVG(${TABLE}.column)` | Requires a numeric column |
+| `min` | `MIN(${TABLE}.column)` | Works on numbers, dates, strings |
+| `max` | `MAX(${TABLE}.column)` | Works on numbers, dates, strings |
+| `median` | `PERCENTILE_CONT(0.5)` | Warehouse support varies |
+| `percentile` | `PERCENTILE_CONT(p)` | Requires `percentile` property |
+| `sum_distinct` | Deduplicated sum via CTE | Requires `distinct_keys` property |
+| `average_distinct` | Deduplicated average via CTE | Requires `distinct_keys` property |
+
+### Non-aggregate metrics
+
+These return a value from a SQL expression without aggregating. Use them for pre-computed values or expressions that already aggregate:
+
+| Type | Use for |
+|---|---|
+| `number` | Custom SQL expression that returns a number |
+| `string` | Custom SQL returning text |
+| `date` | Custom SQL returning a date |
+| `timestamp` | Custom SQL returning a timestamp |
+| `boolean` | Custom SQL returning a boolean |
+
+### Post-calculation metrics
+
+These are computed after the main query runs, against the result set:
+
+| Type | Description |
+|---|---|
+| `percent_of_previous` | Each row's value as a percentage of the previous row |
+| `percent_of_total` | Each row's value as a percentage of the column total |
+| `running_total` | Cumulative sum of the metric |
+
+---
+
+## Complete example: orders model
+
+The following shows a realistic dbt model YAML with Lightdash metadata. It defines dimensions and metrics for an `orders` model and joins in a `customers` model.
+
+```yaml
+version: 2
+
+models:
+  - name: orders
+    description: One row per order placed in the e-commerce system.
+    meta:
+      label: Orders
+      joins:
+        - join: customers
+          sql_on: "${orders.customer_id} = ${customers.customer_id}"
+          type: left
+          relationship: many-to-one
+
+      # Model-level metrics (must include sql explicitly)
+      metrics:
+        revenue_after_discount:
+          type: sum
+          sql: "${TABLE}.amount - ${TABLE}.discount_amount"
+          label: Revenue after discount
+          description: Net revenue accounting for discounts applied at order time
+          format: "$ #,##0.00"
+
+      default_time_dimension:
+        field: ordered_at
+        interval: MONTH
+
+    columns:
+      - name: order_id
+        description: Primary key for orders.
+        meta:
+          dimension:
+            type: string
+            label: Order ID
+            hidden: false
+
+      - name: customer_id
+        description: Foreign key to the customers model.
+        meta:
+          dimension:
+            type: string
+            hidden: true  # Hide the raw FK; users join through the customers explore
+
+      - name: status
+        description: Current fulfillment status of the order.
+        meta:
+          dimension:
+            type: string
+            label: Order status
+          metrics:
+            orders_placed:
+              type: count
+              label: Orders placed
+              description: Total number of orders placed
+            completed_orders:
+              type: count
+              label: Completed orders
+              filters:
+                - status: "completed"
+
+      - name: amount
+        description: Order total in USD before discounts.
+        meta:
+          dimension:
+            type: number
+            label: Order amount
+            format: "$ #,##0.00"
+          metrics:
+            total_revenue:
+              type: sum
+              label: Total revenue
+              format: "$ #,##0.00"
+            average_order_value:
+              type: average
+              label: Average order value
+              format: "$ #,##0.00"
+              round: 2
+
+      - name: ordered_at
+        description: Timestamp when the order was placed (UTC).
+        meta:
+          dimension:
+            type: timestamp
+            label: Ordered at
+            time_intervals:
+              - DAY
+              - WEEK
+              - MONTH
+              - QUARTER
+              - YEAR
+```
+
+---
+
+## Column-level dimension properties
+
+These properties go inside `columns[].meta.dimension`:
+
+<ParamField path="type" type="string">
+  One of `string`, `number`, `date`, `timestamp`, `boolean`. If omitted, inferred from the warehouse column type.
+</ParamField>
+
+<ParamField path="label" type="string">
+  Human-readable display name shown in the Lightdash UI. Defaults to a title-cased version of the column name.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Tooltip shown when a user hovers over the field in the explore panel.
+</ParamField>
+
+<ParamField path="sql" type="string">
+  Override the SQL expression for this dimension. Use `${TABLE}.column_name` syntax to reference the model's underlying table. Example: `COALESCE(${TABLE}.email, ${TABLE}.phone)`.
+</ParamField>
+
+<ParamField path="hidden" type="boolean">
+  When `true`, the dimension is compiled and can be referenced by metrics, but is not shown in the explore sidebar. Default `false`.
+</ParamField>
+
+<ParamField path="time_intervals" type="array | string">
+  For `date` and `timestamp` dimensions. Either an array of interval names, or `"default"` (same as omitting), or `"OFF"` to suppress sub-dimensions.
+</ParamField>
+
+<ParamField path="convert_timezone" type="boolean">
+  When `false`, Lightdash skips the project-timezone conversion for display. The raw warehouse value is shown as-is. Filter SQL is still converted. Defaults to `true`.
+</ParamField>
+
+<ParamField path="format" type="string">
+  Excel-style format string for displaying numeric values (e.g., `"$ #,##0.00"` or `"0.0%"`).
+</ParamField>
+
+<ParamField path="groups" type="string[]">
+  Nest this dimension inside sidebar groups. Up to 3 levels. Example: `["Revenue", "Gross"]` places the dimension under `Revenue > Gross`.
+</ParamField>
+
+<ParamField path="tags" type="string | string[]">
+  One or more tags for filtering fields in the explore. Tags are visible in the Lightdash field picker.
+</ParamField>
+
+<ParamField path="colors" type="object">
+  Map dimension values to hex colors for chart rendering. Example: `{active: "#00B8D9", churned: "#FF5630"}`.
+</ParamField>
+
+<ParamField path="urls" type="array">
+  Clickable links rendered alongside the dimension value. Each entry needs `url` (a LiquidJS template) and `label`.
+</ParamField>
+
+<ParamField path="required_attributes" type="object">
+  Row-level security. Users must have all listed attributes to see rows returned by this dimension. Uses AND logic across keys.
+</ParamField>
+
+<ParamField path="any_attributes" type="object">
+  Row-level security with OR logic. Users must have at least one matching attribute value per key.
+</ParamField>
+
+---
+
+## Column-level metric properties
+
+These properties go inside `columns[].meta.metrics.<metric_name>`:
+
+<ParamField path="type" type="string" required>
+  The metric type. See the metric types table above for valid values.
+</ParamField>
+
+<ParamField path="label" type="string">
+  Display name in the Lightdash UI.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Tooltip description shown in the field picker.
+</ParamField>
+
+<ParamField path="sql" type="string">
+  Override the SQL expression. For column-level metrics, the column's SQL is used by default. Required for model-level metrics.
+</ParamField>
+
+<ParamField path="hidden" type="boolean">
+  Hides the metric from the sidebar. Default `false`.
+</ParamField>
+
+<ParamField path="format" type="string">
+  Format string for display (e.g., `"$ #,##0"`, `"0.0%"`).
+</ParamField>
+
+<ParamField path="round" type="number">
+  Round the result to this many decimal places.
+</ParamField>
+
+<ParamField path="compact" type="string">
+  Display the value in compact notation. Values: `thousands` (`K`), `millions` (`M`), `billions` (`B`), `trillions` (`T`), and byte units (`kilobytes`, `megabytes`, etc.).
+</ParamField>
+
+<ParamField path="filters" type="array">
+  Apply WHERE conditions to just this metric. Each filter is a key-value map where the key is a field name and the value is a literal match. Example: `[{status: "completed"}]`.
+</ParamField>
+
+<ParamField path="percentile" type="number">
+  For `percentile` type only. The percentile rank as a decimal between 0 and 1 (e.g., `0.95` for P95).
+</ParamField>
+
+<ParamField path="distinct_keys" type="string | string[]">
+  For `sum_distinct` and `average_distinct` types. The dimension(s) to use as the deduplication key before aggregating. Prevents double-counting in fan-out joins.
+</ParamField>
+
+<ParamField path="show_underlying_values" type="string[]">
+  Field names to show when a user drills into this metric's underlying rows. Restricts the drill-down columns.
+</ParamField>
+
+<ParamField path="default_time_dimension" type="object">
+  Pin this metric to a specific time dimension when it is opened in the Metrics Explorer. Requires `field` (dimension name) and `interval` (`DAY`, `WEEK`, `MONTH`, or `YEAR`).
+</ParamField>
+
+<ParamField path="groups" type="string[]">
+  Sidebar grouping, same semantics as dimensions.
+</ParamField>
+
+<ParamField path="tags" type="string | string[]">
+  Tags for field filtering.
+</ParamField>
+
+<ParamField path="drivers" type="string[]">
+  Metrics that causally drive this metric—shown in the Metrics Explorer as a relationship. Use `metric_name` for same-table or `table_name.metric_name` for cross-table references.
+</ParamField>
+
+---
+
+## Additional dimensions
+
+Use `additional_dimensions` to define computed columns that are not backed by a single physical column. They are defined either at the column level (deriving from that column) or at the model level (available across all explores).
+
+```yaml
+columns:
+  - name: amount
+    meta:
+      additional_dimensions:
+        amount_in_eur:
+          type: number
+          sql: "${TABLE}.amount * 0.92"
+          label: Amount (EUR)
+          description: Order amount converted to EUR at a fixed rate
+```
+
+---
+
+## Model-level metrics
+
+Define metrics at the model level when the metric SQL does not map to a single column. Model-level metrics require an explicit `sql` property.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      metrics:
+        gross_margin_pct:
+          type: number
+          sql: >
+            SUM(${TABLE}.revenue - ${TABLE}.cost) / NULLIF(SUM(${TABLE}.revenue), 0)
+          label: Gross margin %
+          format: "0.0%"
+```
+
+---
+
+## Joins between models
+
+Define joins in the model's `meta.joins` array. The model containing the join definition is the "base" explore. Joined models contribute their own dimensions and metrics to the explore.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      joins:
+        - join: customers
+          sql_on: "${orders.customer_id} = ${customers.customer_id}"
+          type: left           # inner | left | right | full (default: left)
+          relationship: many-to-one  # one-to-many | many-to-one | one-to-one | many-to-many
+          fields:
+            - customer_name    # Restrict which fields from 'customers' appear in this explore
+          alias: buyer         # Expose the joined model as 'buyer' instead of 'customers'
+          label: Buyer         # Display name for the joined model's section in the sidebar
+          hidden: false        # Set true to join for SQL purposes only without showing fields
+          always: false        # Set true to always include this join even when no joined fields are selected
+```
+
+<Warning>
+The join relationship type affects how Lightdash handles `count` and `count_distinct` metrics. Declaring `many-to-one` when the relationship is actually `one-to-many` will cause incorrect row counts. Always declare the correct relationship.
+</Warning>
+
+---
+
+## Grouping fields in the sidebar
+
+Use `group_details` at the model level and `groups` on individual fields to organize the explore panel into logical sections.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      group_details:
+        financials:
+          label: Financials
+          description: Revenue and cost metrics
+        logistics:
+          label: Logistics
+
+    columns:
+      - name: amount
+        meta:
+          dimension:
+            groups: [financials]
+          metrics:
+            total_revenue:
+              type: sum
+              groups: [financials]
+
+      - name: shipping_carrier
+        meta:
+          dimension:
+            groups: [logistics]
+```
+
+---
+
+## Default filters and row-level security
+
+Apply automatic WHERE conditions to every query against a model using `default_filters` or `sql_filter`.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      # Declarative filter (applied by Lightdash filter engine)
+      default_filters:
+        - status:
+            is: ["completed", "shipped"]
+
+      # Raw SQL filter (appended directly to WHERE clause)
+      sql_filter: "${TABLE}.deleted_at IS NULL"
+```
+
+For row-level security, use `required_attributes` at the model or dimension level. Users must have matching attribute values in their Lightdash user profile to see data from that model.
+
+```yaml
+models:
+  - name: financials
+    meta:
+      required_attributes:
+        department: ["finance", "executive"]
+```
+
+---
+
+## Full reference: YAML structure
+
+The complete shape of a Lightdash-annotated dbt model YAML is:
+
+```yaml
+version: 2
+
+models:
+  - name: <model_name>
+    description: <string>
+    meta:
+      label: <string>
+      joins:
+        - join: <model_name>
+          sql_on: <string>
+          type: inner | left | right | full
+          relationship: one-to-many | many-to-one | one-to-one | many-to-many
+          alias: <string>
+          label: <string>
+          hidden: <boolean>
+          always: <boolean>
+          fields: [<field_name>, ...]
+      metrics:
+        <metric_name>:
+          type: <MetricType>
+          sql: <string>           # Required at model level
+          label: <string>
+          description: <string>
+          hidden: <boolean>
+          format: <string>
+          round: <number>
+          compact: <string>
+          filters: [{<field>: <value>}, ...]
+          groups: [<string>, ...]
+          tags: <string> | [<string>, ...]
+          show_underlying_values: [<string>, ...]
+          default_time_dimension:
+            field: <string>
+            interval: DAY | WEEK | MONTH | YEAR
+      group_details:
+        <group_key>:
+          label: <string>
+          description: <string>
+      default_filters:
+        - <field_name>: <value>
+      sql_filter: <string>
+      required_attributes:
+        <attribute_key>: <value> | [<value>, ...]
+      order_fields_by: index | label
+      default_time_dimension:
+        field: <string>
+        interval: DAY | WEEK | MONTH | YEAR
+
+    columns:
+      - name: <column_name>
+        description: <string>
+        meta:
+          dimension:
+            type: string | number | date | timestamp | boolean
+            label: <string>
+            description: <string>
+            sql: <string>
+            hidden: <boolean>
+            time_intervals: [<TimeFrame>, ...] | default | OFF
+            convert_timezone: <boolean>
+            format: <string>
+            round: <number>
+            compact: <string>
+            groups: [<string>, ...]
+            tags: <string> | [<string>, ...]
+            colors: {<value>: <hex_color>, ...}
+            urls:
+              - url: <liquidjs_template>
+                label: <string>
+            required_attributes:
+              <key>: <value> | [<value>, ...]
+          metrics:
+            <metric_name>:
+              type: <MetricType>
+              label: <string>
+              description: <string>
+              sql: <string>
+              hidden: <boolean>
+              format: <string>
+              round: <number>
+              compact: <string>
+              percentile: <number>      # For percentile type
+              distinct_keys: <string> | [<string>, ...]  # For sum_distinct / average_distinct
+              filters: [{<field>: <value>}, ...]
+              show_underlying_values: [<string>, ...]
+              groups: [<string>, ...]
+              tags: <string> | [<string>, ...]
+              default_time_dimension:
+                field: <string>
+                interval: DAY | WEEK | MONTH | YEAR
+              drivers: [<string>, ...]
+          additional_dimensions:
+            <dimension_name>:
+              type: string | number | date | timestamp | boolean
+              sql: <string>
+              label: <string>
+              description: <string>
+              hidden: <boolean>
+              format: <string>
+              groups: [<string>, ...]
+```

@@ -1,0 +1,261 @@
+---
+title: "SQL Runner: Ad-Hoc Queries and Charts"
+description: "Write raw SQL against your warehouse, visualize results as charts, save SQL charts to Spaces, and promote queries to virtual views reusable across Lightdash."
+---
+
+SQL Runner gives you direct access to your data warehouse from inside Lightdash — no dbt model required. It is designed for ad-hoc exploration, one-off analyses, and situations where the question you need to answer hasn't been modeled in dbt yet. You write SQL, run it, inspect the raw results in a table, then switch to the Chart tab to visualize the same data without re-running the query. Charts created in SQL Runner can be saved to Spaces and added to dashboards alongside Explorer charts. When a SQL query proves useful enough to reuse, you can promote it to a **virtual view** — a persistent table-like object that appears in the Explorer's table list so other users can query it without writing SQL.
+
+## When to Use SQL Runner
+
+<CardGroup cols={2}>
+  <Card title="Ad-hoc exploration" icon="magnifying-glass">
+    Answer one-off questions that aren't covered by existing dbt models, without waiting for a model refresh.
+  </Card>
+  <Card title="Joining across models" icon="arrows-merge">
+    Write arbitrary JOIN expressions across tables that aren't joined in your dbt project.
+  </Card>
+  <Card title="Testing SQL logic" icon="flask">
+    Prototype new SQL expressions before committing them to a dbt model or table calculation.
+  </Card>
+  <Card title="Creating reusable views" icon="table">
+    Promote a useful query to a virtual view so it appears in the Explorer for the whole team.
+  </Card>
+</CardGroup>
+
+<Note>
+  SQL Runner charts are distinct from Explorer charts. They are saved as `SqlChart` objects (with a `savedSqlUuid`) rather than `SavedChart` objects (with a `uuid`). They share the same Space and dashboard system but have separate version histories and do not support table calculations or dashboard cross-filtering by dbt dimensions.
+</Note>
+
+## Writing and Running SQL
+
+SQL Runner opens with a Monaco-powered SQL editor that provides syntax highlighting and error indication.
+
+<Steps>
+  <Step title="Open SQL Runner">
+    Click **SQL Runner** in the left sidebar. The left panel shows the database schema browser; the right panel contains the editor and results.
+  </Step>
+  <Step title="Browse your schema">
+    The **Tables** panel on the left lists every table and view available in your warehouse connection. Click a table to expand it and see its columns, types, and descriptions. Click a column name to insert it at the cursor position in the editor.
+  </Step>
+  <Step title="Write your query">
+    Type SQL in the editor. The default result limit is 500 rows. Use `Cmd/Ctrl + Enter` to run the query without clicking the button.
+
+    ```sql
+    SELECT
+      date_trunc('month', o.created_at)  AS order_month,
+      s.name                             AS store_name,
+      COUNT(*)                           AS order_count,
+      SUM(o.amount)                      AS total_revenue
+    FROM orders o
+    JOIN stores s ON s.id = o.store_id
+    WHERE o.status = 'completed'
+    GROUP BY 1, 2
+    ORDER BY 1 DESC, 3 DESC
+    ```
+  </Step>
+  <Step title="Run the query">
+    Click **Run** or press `Cmd/Ctrl + Enter`. The results appear in the **Results** pane below the editor. If the query returns 500 or more rows, a notice indicates that results are truncated.
+  </Step>
+  <Step title="Inspect results">
+    The Results tab shows a scrollable data table with all returned columns. Sort columns by clicking their headers.
+  </Step>
+</Steps>
+
+<Tip>
+  Use the **Format SQL** button (code icon in the toolbar) to auto-format your SQL. The formatter is warehouse-aware and uses the connection type to apply the appropriate dialect rules.
+</Tip>
+
+### Keyboard shortcuts
+
+| Action | Shortcut |
+|--------|----------|
+| Run query | `Cmd/Ctrl + Enter` |
+| Format SQL | Format button in toolbar |
+
+### Query history
+
+SQL Runner maintains a session history of every query you run. Click the **History** icon in the toolbar to see previous queries and restore any of them to the editor.
+
+## Warehouse SQL Syntax
+
+SQL Runner sends your query verbatim to the connected warehouse. Each warehouse has its own SQL dialect:
+
+<Tabs>
+  <Tab title="BigQuery">
+    Use standard SQL (not legacy SQL). Backtick identifiers are supported. Date/time functions follow BigQuery's standard library (e.g., `DATE_TRUNC`, `TIMESTAMP_TRUNC`).
+  </Tab>
+  <Tab title="Snowflake">
+    Uses double-quote identifiers. Snowflake's semi-structured data functions (`FLATTEN`, `PARSE_JSON`) are available. Schema and database context is set by the warehouse connection.
+  </Tab>
+  <Tab title="Databricks / Spark">
+    Uses backtick identifiers. Spark SQL functions are available including `DATE_TRUNC`, window functions, and Delta Lake-specific syntax.
+  </Tab>
+  <Tab title="PostgreSQL / Redshift">
+    Standard PostgreSQL syntax. Double-quote identifiers. Redshift-specific distribution and sort key hints are ignored in SQL Runner but won't cause errors.
+  </Tab>
+  <Tab title="Trino / DuckDB">
+    ANSI SQL with double-quote identifiers. Trino's connector-specific syntax is available if your Lightdash deployment uses Trino.
+  </Tab>
+</Tabs>
+
+<Warning>
+  Lightdash does not sandbox or modify the SQL you write. You have the same read (and write, if granted) permissions in SQL Runner as the warehouse credentials used by your Lightdash project connection. Confirm with your data platform team what access those credentials have before running destructive statements.
+</Warning>
+
+## Visualizing SQL Runner Results
+
+After running a query, switch to the **Chart** tab in the content panel to visualize the results.
+
+### Two modes: Results and Visualization
+
+The SQL Runner content panel operates in two distinct modes:
+
+| Tab | Query executed | Uses cache |
+|-----|---------------|------------|
+| **SQL** (Results) | Raw SQL query | No |
+| **Chart** (Visualization) | Pivot query over result columns | Yes (invalidated on Run) |
+
+Switching to the Chart tab automatically triggers a pivot query over the columns returned by your SQL. The pivot query is cached — switching back and forth between tabs does not re-run the warehouse query unless you click **Run** explicitly.
+
+### Supported chart types in SQL Runner
+
+SQL Runner visualizations use the `SqlChart` config type, which supports:
+
+- **Cartesian charts** (`VizCartesianChartConfig`): line, bar, area, scatter
+- **Pie charts** (`VizPieChartConfig`)
+- **Table** (`VizTableConfig`)
+
+<Note>
+  SQL Runner does not yet support the full set of chart types available in the Explorer (gauge, treemap, map, sankey, funnel, big number). Use the Explorer for those chart types.
+</Note>
+
+### Configuring the chart
+
+<Steps>
+  <Step title="Open the Chart tab">
+    Click **Chart** in the SQL/Chart toggle. If no results exist yet, Lightdash prompts you to run the query first.
+  </Step>
+  <Step title="Choose a chart type">
+    Select the chart kind from the chart type picker in the sidebar: bar, line, area, scatter, pie, or table.
+  </Step>
+  <Step title="Map fields to axes">
+    The sidebar shows the columns returned by your query as `SqlRunnerField` objects with inferred types (`time`, `number`, `string`, `boolean`). Drag or select:
+    - An **X axis** field (typically a time or string dimension)
+    - One or more **Y axis** fields (typically number metrics)
+    - Optional **Group by** field for color-coded series (pivot)
+  </Step>
+  <Step title="Sort and filter">
+    Use the sidebar sort controls to order the chart data. SQL Runner filters (`SqlRunnerFilter`) support `IS` and `IS_NOT` operators for string fields and relative time values (`TODAY`, `YESTERDAY`, `LAST_7_DAYS`, `LAST_30_DAYS`) for time fields.
+  </Step>
+  <Step title="Set a row limit">
+    Adjust the limit using the limit control next to the Run button when the Chart tab is active. The default is 500 rows.
+  </Step>
+</Steps>
+
+### Table view in SQL Runner
+
+When the chart type is **Table**, the results table renders directly in the chart area (the raw results panel is hidden). Column configuration from `VizTableConfig` controls column visibility, ordering, and formatting.
+
+## Saving SQL Runner Charts
+
+A SQL Runner chart that you want to reuse or share can be saved as a `SqlChart`.
+
+<Steps>
+  <Step title="Click Save">
+    Click **Save** in the SQL Runner toolbar (or **Save chart** for a new chart).
+  </Step>
+  <Step title="Name the chart">
+    Give the chart a name and an optional description.
+  </Step>
+  <Step title="Choose a Space">
+    Select a Space from the dropdown. The chart is saved as a `SqlChart` with its own `savedSqlUuid` and `slug`.
+  </Step>
+  <Step title="Add to a dashboard">
+    From any dashboard in edit mode, click **Add tile → SQL chart** to embed the saved SQL chart. SQL chart tiles use the `sql_chart` tile type.
+  </Step>
+</Steps>
+
+SQL charts are versioned separately from Explorer charts. Each save creates a new `savedSqlVersionUuid`. The chart config (`sql`, `limit`, and the visualization config) is versioned; the name, description, and Space assignment are unversioned fields you can update without creating a new version.
+
+### Downloading results
+
+- **Results tab** — download as CSV via the download button. You can choose a custom row limit or request all rows (no limit).
+- **Chart tab** — download the chart as a PNG image, or export the underlying pivot data as CSV.
+
+## Virtual Views
+
+When a SQL query is useful enough that other team members should be able to query it without writing SQL themselves, you can promote it to a **virtual view**. A virtual view registers the SQL query as a named table in the Explorer — it appears in the table list alongside your dbt models and can be used as the basis for Explorer charts, table calculations, and dashboard filters.
+
+### Creating a virtual view
+
+<Steps>
+  <Step title="Write and run your SQL">
+    Write a query in SQL Runner and run it to confirm the results and column types are correct.
+  </Step>
+  <Step title="Click Save as virtual view">
+    Click the **Save as virtual view** option in the Save dropdown.
+  </Step>
+  <Step title="Name the view">
+    Enter a name. This name becomes the table's identifier in the Explorer. Use a descriptive, snake_case name (e.g., `weekly_active_users`).
+  </Step>
+  <Step title="Review columns">
+    Lightdash infers column names and types (`VizColumn`) from the query results. Review and adjust types if needed.
+  </Step>
+  <Step title="Confirm">
+    Click **Save**. The virtual view is registered via `CreateVirtualViewPayload` and immediately appears in the Explorer table list.
+  </Step>
+</Steps>
+
+The `CreateVirtualViewPayload` type captures the view definition:
+
+```typescript
+type CreateVirtualViewPayload = {
+    name: string;
+    sql: string;
+    columns: VizColumn[];
+    parameterValues?: ParametersValuesMap;
+};
+```
+
+<Tip>
+  Virtual views support Lightdash parameters. If your SQL references `{{ params.date_range }}`, you can pass parameter values when querying the virtual view from the Explorer, making it behave like a parameterized dbt model.
+</Tip>
+
+### Updating and deleting virtual views
+
+To update a virtual view, open SQL Runner and navigate to the view's SQL from the virtual views section of the sidebar. Edit the SQL and click **Save virtual view** again — this updates both the SQL and the inferred column list.
+
+To delete a virtual view, open the virtual view in SQL Runner and select **Delete** from the options menu. Deleting a virtual view removes it from the Explorer; any Explorer charts that referenced it will become invalid.
+
+## SQL Runner vs. Explorer: Key Differences
+
+| Feature | Explorer | SQL Runner |
+|---------|----------|------------|
+| Data source | dbt models | Any table or view in the warehouse |
+| Query definition | Point-and-click field selection | Raw SQL |
+| Table calculations | Full support (SQL, template, formula) | Not supported |
+| Chart types | All 15 chart kinds | Cartesian, pie, table |
+| Dashboard cross-filtering | Full support | Partial (field matching by column name) |
+| Chart versioning | `SavedChart` with history | `SqlChart` with version UUIDs |
+| Promote to reusable table | — | Virtual views |
+| dbt metadata (descriptions, tags) | Inherited from dbt | Not available |
+
+<Accordion title="Frequently asked questions">
+
+**Can I join a SQL Runner result with a dbt model in the Explorer?**
+
+Not directly — the Explorer and SQL Runner use separate query engines. However, you can create a virtual view from a SQL Runner query that joins multiple tables, then use that virtual view as a table in the Explorer.
+
+**Does SQL Runner support parameters?**
+
+Yes. SQL Runner recognizes parameter references in the format `{{ params.name }}` and surfaces a parameter input UI for each referenced parameter. Parameter values are passed to the warehouse at query time via `ParametersValuesMap`.
+
+**Are SQL Runner queries logged?**
+
+Yes. Every query execution creates a query history entry. Query UUIDs are generated and stored so that downloads and follow-up pivot queries reference the same result set.
+
+**Can I schedule a SQL Runner chart to be delivered by email or Slack?**
+
+Yes. Saved SQL charts support the same scheduler system as Explorer charts. Open the chart's options menu and select **Schedule delivery** to configure email or Slack recipients and a cron schedule.
+
+</Accordion>

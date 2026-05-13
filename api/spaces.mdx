@@ -1,0 +1,98 @@
+---
+title: "REST API endpoints for Lightdash spaces"
+description: "Create, update, and delete Lightdash spaces via the REST API, and control which users can access them with space-level sharing endpoints."
+---
+
+Spaces are containers that organize charts and dashboards in Lightdash. The spaces API lets you create and manage spaces and control which users can access them.
+
+## List spaces
+
+```bash
+GET /api/v1/projects/{projectUuid}/spaces
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123/spaces \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": [
+    {
+      "uuid": "space-uuid",
+      "name": "Finance",
+      "isPrivate": true,
+      "access": [],
+      "projectUuid": "abc-123"
+    }
+  ]
+}
+```
+
+## Get a space
+
+```bash
+GET /api/v1/projects/{projectUuid}/spaces/{spaceUuid}
+```
+
+## Create a space
+
+```bash
+POST /api/v1/projects/{projectUuid}/spaces
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/spaces \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Finance Reports", "isPrivate": true}'
+```
+
+## Update a space
+
+```bash
+PATCH /api/v1/projects/{projectUuid}/spaces/{spaceUuid}
+```
+
+```bash
+curl -X PATCH https://your-lightdash.com/api/v1/projects/abc-123/spaces/space-uuid \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Finance Reports Q4", "isPrivate": false}'
+```
+
+## Delete a space
+
+```bash
+DELETE /api/v1/projects/{projectUuid}/spaces/{spaceUuid}
+```
+
+## Manage space access
+
+### Add a user to a space
+
+```bash
+POST /api/v1/projects/{projectUuid}/spaces/{spaceUuid}/share
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/spaces/space-uuid/share \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"userUuid": "user-uuid", "spaceRole": "viewer"}'
+```
+
+Space roles: `viewer`, `editor`, `admin`.
+
+### Remove a user from a space
+
+```bash
+DELETE /api/v1/projects/{projectUuid}/spaces/{spaceUuid}/share/{userUuid}
+```
+
+<Note>
+Spaces with `isPrivate: false` inherit access from the project. Only private spaces use the explicit access list. See [Spaces & Permissions](/share/spaces-permissions) for the full access model.
+</Note>

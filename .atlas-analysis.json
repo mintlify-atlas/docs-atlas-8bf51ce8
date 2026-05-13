@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Lightdash",
+  "projectType": "saas",
+  "projectName": "Lightdash",
+  "projectDescription": "Open-source agentic BI platform that connects to dbt projects to enable self-service analytics with charts, dashboards, and AI-assisted data exploration.",
   "theme": "palm",
-  "colors": {
-    "primary": "#847cfc",
-    "light": "#7c7c7c",
-    "dark": "#040404"
-  },
-  "favicon": "https://media.brand.dev/ed9cbf42-769f-4cc5-84aa-48f0839af4ce.jpg",
-  "logo": {
-    "light": "https://media.brand.dev/d7a4e474-7c77-40b6-acad-258f2762c410.svg",
-    "dark": "https://media.brand.dev/d7a4e474-7c77-40b6-acad-258f2762c410.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/lightdash/lightdash"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/lightdash/lightdash"
-    }
-  },
+  "primaryColor": "#847cfc",
+  "lightColor": "#7c7c7c",
+  "darkColor": "#040404",
   "navigation": {
     "tabs": [
       {
@@ -108,5 +91,43 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "dbt-native metrics and dimensions defined in YAML alongside your dbt project",
+    "Self-service analytics with drag-and-drop chart builder",
+    "SQL Runner for ad-hoc queries directly against your warehouse",
+    "Dashboards with filters, tabs, and cross-filtering",
+    "Preview BI environments for safe iterative development",
+    "Content-as-code (charts and dashboards as YAML) with CLI upload/download",
+    "Scheduled deliveries via Slack and Email",
+    "Secure embedding with JWT-signed dashboard URLs",
+    "CASL-based authorization with custom roles and scopes",
+    "Support for BigQuery, Snowflake, Postgres, Redshift, Databricks, DuckDB, Athena, Clickhouse, Trino",
+    "Agentic BI features with AI-assisted data exploration",
+    "CI/CD integration with automated content validation"
+  ],
+  "publicApiSurface": [
+    "GET/POST /api/v1/projects",
+    "GET/POST /api/v1/projects/{projectUuid}/explores",
+    "POST /api/v1/projects/{projectUuid}/explores/{exploreId}/runQuery",
+    "GET/POST /api/v1/projects/{projectUuid}/saved",
+    "GET/POST /api/v1/projects/{projectUuid}/dashboards",
+    "GET/POST /api/v1/projects/{projectUuid}/spaces",
+    "GET/POST /api/v1/org/users",
+    "GET/POST /api/v1/org/groups",
+    "GET/POST /api/v1/scheduler",
+    "POST /api/v1/login",
+    "GET /api/v1/user",
+    "lightdash login",
+    "lightdash compile",
+    "lightdash deploy",
+    "lightdash preview / start-preview / stop-preview",
+    "lightdash generate",
+    "lightdash validate",
+    "lightdash download / upload",
+    "lightdash dbt run",
+    "lightdash rename",
+    "lightdash sql",
+    "lightdash lint"
+  ]
 }

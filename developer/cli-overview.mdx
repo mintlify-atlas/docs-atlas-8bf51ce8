@@ -1,0 +1,692 @@
+---
+title: "Lightdash CLI: Complete Command Reference"
+description: "Install and use the Lightdash CLI to compile dbt models, deploy projects, validate content, and automate your BI workflow from the terminal."
+---
+
+The Lightdash CLI (`@lightdash/cli`) is the primary tool for integrating Lightdash into your dbt development workflow. It lets you compile metrics and dimensions from your dbt project, push them to Lightdash, spin up temporary preview environments per branch, and automate everything inside a CI/CD pipeline. Every command accepts `--verbose` for detailed output and the global `--non-interactive` flag disables all prompts so commands can run unattended.
+
+## Installation
+
+```bash
+npm i -g @lightdash/cli
+```
+
+<Note>
+Lightdash CLI is optimized for the Node.js LTS version. If you see a warning about your Node.js version, upgrade to the recommended version to avoid unexpected issues.
+</Note>
+
+## Environment variables
+
+| Variable | Description |
+|---|---|
+| `LIGHTDASH_API_KEY` | API token used instead of `--token` during login |
+| `LIGHTDASH_CLI_EMAIL` | Email for login (alternative to `--email`) |
+| `LIGHTDASH_CLI_PASSWORD` | Password for email login (used with `--email` or `LIGHTDASH_CLI_EMAIL`) |
+| `CI=true` | Equivalent to `--non-interactive`; disables all interactive prompts |
+
+## Global options
+
+| Flag | Description |
+|---|---|
+| `--non-interactive` | Disable all interactive prompts. Commands fail with a helpful error when required input is missing. |
+
+---
+
+## `lightdash login`
+
+Authenticates the CLI against a Lightdash instance. By default, login opens a browser for OAuth. Use `--token` to bypass OAuth, which is required in CI environments.
+
+```bash
+lightdash login [url]
+```
+
+The `url` argument is flexible: a single word like `app` becomes `https://app.lightdash.cloud`, the `https://` protocol is added automatically, and any path in the URL is stripped.
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--token <token>` | Log in with an API access token (bypasses OAuth) |
+| `--project <project uuid>` | Select a specific project by UUID after login. Conflicts with `--skip-project-selection`. |
+| `--email <email>` | Log in with email and password |
+| `--oauth-port <port>` | Port for the local OAuth callback server (default: random available port) |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+
+```bash OAuth (default)
+lightdash login https://app.lightdash.cloud
+```
+
+```bash API token (CI-friendly)
+lightdash login https://app.lightdash.cloud \
+  --token $LIGHTDASH_API_KEY \
+  --non-interactive
+```
+
+```bash Short-form cloud URL
+# "app" expands to https://app.lightdash.cloud
+lightdash login app
+
+# "eu1" expands to https://eu1.lightdash.cloud
+lightdash login eu1
+```
+
+```bash Local development
+lightdash login http://localhost:3000 --email demo@lightdash.com
+```
+
+</CodeGroup>
+
+<Note>
+In non-interactive mode (`--non-interactive` or `CI=true`), OAuth is not available. Use `--token` or set `LIGHTDASH_API_KEY`. To log in with email/password non-interactively, set `LIGHTDASH_CLI_EMAIL` and `LIGHTDASH_CLI_PASSWORD` environment variables.
+</Note>
+
+---
+
+## `lightdash compile`
+
+Compiles Lightdash resources from your dbt project — reads `target/manifest.json`, fetches the warehouse catalog, and converts dbt models into Lightdash explores. Compilation is required before deploying.
+
+```bash
+lightdash compile [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--project-dir <path>` | The directory of the dbt project (default: current directory) |
+| `--profiles-dir <path>` | The directory of the dbt profiles (default: `~/.dbt`) |
+| `--profile <name>` | The profile to use (defaults to profile name in `dbt_project.yml`) |
+| `--target <name>` | Target to use in `profiles.yml` |
+| `--target-path <path>` | Override the dbt target directory (overrides `DBT_TARGET_PATH` and `dbt_project.yml`) |
+| `--vars <vars>` | dbt variables to pass to the project |
+| `--threads <number>` | Number of threads to use |
+| `--no-version-check` | Skip dbt version check |
+| `-s, --select <models...>` | Specify models using dbt selection syntax |
+| `-m, --models <models...>` | Specify models using dbt selection syntax (alias for `--select`) |
+| `--exclude <models...>` | Exclude models using dbt selection syntax |
+| `--selector <selector_name>` | Use a saved dbt selector |
+| `--state <state>` | Path to a directory containing a dbt state manifest |
+| `--full-refresh` | Run dbt with `--full-refresh` |
+| `--skip-warehouse-catalog` | Skip fetching the warehouse catalog and use column types defined in YAML |
+| `--skip-dbt-compile` | Skip `dbt compile` and use the existing `./target/manifest.json` |
+| `--defer` | Resolve unselected nodes by deferring to the manifest in `--state` |
+| `--no-defer` | Do not resolve unselected nodes by deferring to the state manifest |
+| `--favor-state` | When deferring, prioritize node definitions from `--state` |
+| `--no-warehouse-credentials` | Compile without warehouse credentials (skips dbt compile + catalog) |
+| `--use-dbt-list [true\|false]` | Use `dbt list` instead of `dbt compile` to generate the manifest (default: `true`) |
+| `--disable-timestamp-conversion [true\|false]` | Disable timestamp conversion to UTC for Snowflake. Only use when timestamps are already UTC. (default: `false`) |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash deploy`
+
+Compiles your dbt project and deploys the resulting Lightdash explores to the active project. Can also create a new project with `--create`.
+
+```bash
+lightdash deploy [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="dbt project flags">
+
+| Flag | Description |
+|---|---|
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `--target <name>` | Target to use in `profiles.yml` |
+| `--target-path <path>` | Override the dbt target directory |
+| `--vars <vars>` | dbt variables |
+| `--threads <number>` | Number of threads |
+| `--no-version-check` | Skip dbt version check |
+| `-s, --select <models...>` | Select models |
+| `-m, --models <models...>` | Select models (alias) |
+| `--exclude <models...>` | Exclude models |
+| `--selector <selector_name>` | Use a saved selector |
+| `--state <state>` | Path to state directory |
+| `--full-refresh` | Run with `--full-refresh` |
+| `--defer` | Defer unselected nodes to the state manifest |
+| `--no-defer` | Disable defer |
+| `--favor-state` | Prioritize state definitions when deferring |
+
+  </Accordion>
+  <Accordion title="Lightdash deploy flags">
+
+| Flag | Description |
+|---|---|
+| `--create [project_name]` | Create a new project. Prompts for a name if not provided. |
+| `--ignore-errors` | Deploy even when there are compile errors |
+| `--start-of-week <number>` | First day of the week for date functions. `0` = Monday, `6` = Sunday. |
+| `--skip-dbt-compile` | Skip `dbt compile`; use the existing `./target/manifest.json` |
+| `--skip-warehouse-catalog` | Skip warehouse catalog fetch; use YAML types |
+| `--use-dbt-list [true\|false]` | Use `dbt list` instead of `dbt compile` (default: `true`) |
+| `--no-warehouse-credentials` | Deploy without warehouse credentials |
+| `--organization-credentials <name>` | Use organization credentials by name (Enterprise Edition) |
+| `--disable-timestamp-conversion [true\|false]` | Disable UTC timestamp conversion for Snowflake (default: `false`) |
+| `-y, --assume-yes` | Answer yes to all prompts |
+| `--use-batched-deploy` | Upload explores in batches (recommended for large projects) |
+| `--batch-size <number>` | Explores per batch (default: `50`, max: `1000`) |
+| `--parallel-batches <number>` | Parallel batches (default: `1`, max: `50`) |
+| `--gzip` | Enable gzip compression on request bodies |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+For large dbt projects that hit payload size limits, add `--use-batched-deploy`. The CLI will automatically suggest this flag if a `413 Request Entity Too Large` error is returned.
+</Tip>
+
+---
+
+## `lightdash generate`
+
+Generates Lightdash schema YAML files (`.yml`) for your dbt models. Adds Lightdash metadata sections to existing schema files or creates new ones.
+
+```bash
+lightdash generate [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-s, --select <models...>` | Models to generate (dbt selection syntax) |
+| `-e, --exclude <models...>` | Models to exclude |
+| `-m, --models <models...>` | Alias for `--select` |
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `--target <name>` | Target to use |
+| `--target-path <path>` | Override the dbt target directory |
+| `--vars <vars>` | dbt variables |
+| `-y, --assume-yes` | Answer yes to prompts |
+| `--skip-existing` | Skip models that already have a schema file |
+| `--exclude-meta` | Exclude Lightdash metadata from the generated YAML |
+| `--preserve-column-case` | Preserve original casing of column names |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+```bash
+# Generate for all models
+lightdash generate
+
+# Generate for a single model
+lightdash generate -s mymodel
+
+# Generate for models with a tag
+lightdash generate -s tag:sales
+
+# Generate for a model and all its parents
+lightdash generate -s +mymodel
+```
+
+---
+
+## `lightdash validate`
+
+Validates a Lightdash project by compiling the dbt project locally, submitting the explores to the server, and checking all charts and dashboards against those explores. Exits with code `1` if any errors are found.
+
+```bash
+lightdash validate [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--project <project uuid>` | Project UUID to validate. Defaults to the last preview project if `--preview` is set, or the configured default project. |
+| `--preview` | Validate the last preview project (if available) |
+| `--only <elems...>` | Validate only specific elements. Choices: `charts`, `dashboards`, `tables`. Defaults to all three. |
+| `--show-chart-configuration-warnings` | Show chart configuration warnings (e.g., unused dimensions). Hidden by default. |
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `--target <name>` | Target to use |
+| `--vars <vars>` | dbt variables |
+| `--threads <number>` | Number of threads |
+| `--no-version-check` | Skip dbt version check |
+| `-s, --select <models...>` | Select models |
+| `-m, --models <models...>` | Select models (alias) |
+| `--exclude <models...>` | Exclude models |
+| `--selector <selector_name>` | Use a saved selector |
+| `--state <state>` | Path to state directory |
+| `--full-refresh` | Run with `--full-refresh` |
+| `--skip-dbt-compile` | Skip `dbt compile` |
+| `--skip-warehouse-catalog` | Skip warehouse catalog fetch |
+| `--use-dbt-list [true\|false]` | Use `dbt list` instead of `dbt compile` (default: `true`) |
+| `--disable-timestamp-conversion [true\|false]` | Disable UTC timestamp conversion for Snowflake (default: `false`) |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash dbt run`
+
+Runs dbt for the selected models and then generates Lightdash schema YAML for the affected models.
+
+```bash
+lightdash dbt run [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `-t, --target <target>` | Target to use |
+| `-x, --fail-fast` | Stop on first error |
+| `--threads <threads>` | Number of threads |
+| `--no-version-check` | Skip version check |
+| `-s, --select <select> [selects...]` | Select models |
+| `--state <state>` | Path to state directory |
+| `--defer` | Defer unselected nodes to the state manifest |
+| `--no-defer` | Disable defer |
+| `--favor-state` | Prioritize state definitions when deferring |
+| `--full-refresh` | Run with full refresh |
+| `--exclude-meta` | Exclude Lightdash metadata from generated YAML |
+| `-y, --assume-yes` | Answer yes to prompts |
+| `-no, --assume-no` | Answer no to prompts |
+| `--preserve-column-case` | Preserve original casing of column names |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash download`
+
+Downloads all charts and dashboards from a Lightdash project as YAML files (content-as-code). By default, files are saved to a `lightdash/` directory in the current working directory.
+
+```bash
+lightdash download [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-c, --charts <charts...>` | Slugs, UUIDs, or URLs of specific charts to download |
+| `-d, --dashboards <dashboards...>` | Slugs, UUIDs, or URLs of specific dashboards to download |
+| `-l, --language-map` | Generate language map files for downloaded charts and dashboards |
+| `-p, --path <path>` | Custom output directory (default: `./lightdash`) |
+| `--nested` | Organize downloads in nested folders by project and space (default: flat) |
+| `--project <project uuid>` | Project UUID to download from |
+| `--skip-spaces` | Skip writing space metadata (`.space.yml`) files |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash upload`
+
+Uploads YAML content-as-code files from a local directory to a Lightdash project. Only files that have been modified since the last download are uploaded unless `--force` is set.
+
+```bash
+lightdash upload [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-c, --charts <charts...>` | Slugs of specific charts to force upload |
+| `-d, --dashboards <dashboards...>` | Slugs of specific dashboards to force upload |
+| `--force` | Upload all files regardless of local changes. Use when deploying to a new project. |
+| `-p, --path <path>` | Custom source directory |
+| `--project <project uuid>` | Target project UUID |
+| `--skip-space-create` | Skip space creation if the space does not exist |
+| `--public` | Create new spaces as public instead of private |
+| `--concurrency <number>` | Number of parallel uploads (default: `1`) |
+| `--include-charts` | Include chart updates when uploading dashboards |
+| `--validate` | Run server-side validation after upload |
+| `--gzip` | Enable gzip compression on request bodies |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash rename`
+
+Renames a model or field across all Lightdash content (charts and dashboards) in a project.
+
+```bash
+lightdash rename [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Required | Description |
+|---|---|---|
+| `-t, --type <type>` | Yes | `model` or `field` |
+| `--from <from>` | Yes | The name to replace |
+| `--to <to>` | Yes | The new name |
+| `-m, --model <model>` | No | When renaming a field, the model it belongs to |
+| `-p, --project <project uuid>` | No | Project UUID (defaults to configured project) |
+| `-y, --assume-yes` | No | Answer yes to prompts |
+| `--dry-run` | No | Preview changes without making them |
+| `--list` | No | List all affected charts and dashboards |
+| `--verbose` | No | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash sql`
+
+Runs a raw SQL query against the warehouse using the project's credentials and writes the results to a CSV file.
+
+```bash
+lightdash sql <query> --output <file> [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Required | Description |
+|---|---|---|
+| `-o, --output <file>` | Yes | Output file path for CSV results |
+| `--limit <number>` | No | Maximum rows to return |
+| `--page-size <number>` | No | Rows per page (default: `500`, max: `5000`) |
+| `--verbose` | No | Show detailed output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash run-chart`
+
+Executes the metric query defined in a chart YAML file against the warehouse to verify it runs correctly.
+
+```bash
+lightdash run-chart --path <path> [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Required | Description |
+|---|---|---|
+| `-p, --path <path>` | Yes | Path to the chart YAML file |
+| `-o, --output <file>` | No | Output file path for CSV results |
+| `-l, --limit <number>` | No | Row limit |
+| `--page-size <number>` | No | Rows per page (default: `500`) |
+| `--verbose` | No | Show detailed output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash export-chart-image`
+
+Exports a deployed chart as a PNG image. The chart must already exist on the server.
+
+```bash
+lightdash export-chart-image <chart> --output <file> [flags]
+```
+
+| Argument / Flag | Required | Description |
+|---|---|---|
+| `<chart>` | Yes | Chart slug |
+| `-o, --output <file>` | Yes | Output file path for the PNG image |
+| `--verbose` | No | Show detailed output |
+
+---
+
+## `lightdash lint`
+
+Validates Lightdash content-as-code YAML files (charts, dashboards) against their JSON schemas. Useful for catching schema errors before uploading.
+
+```bash
+lightdash lint [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-p, --path <path>` | Path to a file or directory to lint (defaults to current directory) |
+| `-f, --format <format>` | Output format: `cli` (default) or `json` (SARIF format) |
+| `--verbose` | Show detailed output |
+
+  </Accordion>
+</AccordionGroup>
+
+```bash
+# Lint all files in the current directory
+lightdash lint
+
+# Lint a specific file
+lightdash lint --path ./lightdash/charts/weekly-sales.yml
+
+# Lint a directory and output SARIF JSON
+lightdash lint --path ./lightdash --format json
+```
+
+---
+
+## `lightdash pre-aggregate-audit`
+
+Audits pre-aggregate hit/miss coverage for a dashboard or all dashboards in a project. Useful for identifying which dashboard tiles are not served by a pre-aggregate.
+
+```bash
+lightdash pre-aggregate-audit [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--dashboard <uuidOrSlug>` | Dashboard UUID or slug (required unless `--all` is set) |
+| `--all` | Audit every dashboard in the target project |
+| `--project <projectUuid>` | Project UUID (defaults to `LIGHTDASH_PROJECT_UUID` env or configured project) |
+| `--json` | Emit machine-readable JSON |
+| `--fail-on-miss` | Exit `1` if any eligible tile is a pre-aggregate miss (CI-friendly) |
+| `--verbose` | Expand the ineligible section in human output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash install-skills`
+
+Installs Lightdash AI skills for AI coding assistants (Claude, Cursor, Codex). Skills provide the assistant with knowledge of the Lightdash CLI and content-as-code format.
+
+```bash
+lightdash install-skills [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--agent <agent>` | Target agent: `claude` (default), `cursor`, or `codex` |
+| `--global` | Install globally to `~/.claude/skills/` (or equivalent) instead of project-level |
+| `--path <path>` | Override the install path |
+| `--source <org/repo>` | GitHub repository to download skills from (default: `lightdash/lightdash`) |
+| `--verbose` | Show detailed output |
+
+  </Accordion>
+</AccordionGroup>
+
+Skills are installed at project level by default:
+
+| Agent | Project path | Global path |
+|---|---|---|
+| Claude | `.claude/skills/` | `~/.claude/skills/` |
+| Cursor | `.cursor/skills/` | `~/.cursor/skills/` |
+| Codex | `.codex/skills/` | `~/.codex/skills/` |
+
+---
+
+## `lightdash diagnostics`
+
+Displays diagnostic information about the CLI environment: CLI version, Node.js version, and authentication status. Optionally runs `dbt debug`.
+
+```bash
+lightdash diagnostics [flags]
+```
+
+| Flag | Description |
+|---|---|
+| `--dbt` | Include `dbt debug` output |
+| `--project-dir <path>` | dbt project directory (used with `--dbt`) |
+| `--profiles-dir <path>` | dbt profiles directory (used with `--dbt`) |
+| `--defer` | Pass `--defer` to `dbt debug` |
+| `--no-defer` | Pass `--no-defer` to `dbt debug` |
+
+---
+
+## `lightdash config` subcommands
+
+Manage the CLI's project configuration.
+
+<AccordionGroup>
+  <Accordion title="config set-project">
+
+Choose the active project. Without flags, shows an interactive picker.
+
+```bash
+lightdash config set-project [flags]
+```
+
+| Flag | Description |
+|---|---|
+| `--name <project_name>` | Set non-interactively by project name |
+| `--uuid <project_uuid>` | Set non-interactively by project UUID. Conflicts with `--name`. |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+  <Accordion title="config get-project">
+
+Show the currently selected project.
+
+```bash
+lightdash config get-project
+```
+
+  </Accordion>
+  <Accordion title="config list-projects">
+
+List all projects in the organization (excludes preview projects).
+
+```bash
+lightdash config list-projects
+```
+
+  </Accordion>
+  <Accordion title="config unset-project">
+
+Clear the currently selected project.
+
+```bash
+lightdash config unset-project
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash set-warehouse`
+
+Updates a project's warehouse connection from your local `profiles.yml`. For organization-managed credentials, use the Lightdash UI instead.
+
+```bash
+lightdash set-warehouse [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `--target <name>` | Target to use |
+| `--target-path <path>` | Override the dbt target directory |
+| `--project <uuid>` | Lightdash project UUID to update (defaults to configured project) |
+| `--start-of-week <number>` | First day of the week. `0` = Monday, `6` = Sunday. |
+| `-y, --assume-yes` | Answer yes to prompts |
+| `--verbose` | Show detailed output |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash generate-exposures`
+
+*(Experimental)* Generates a `.yml` file containing dbt exposure definitions for all Lightdash charts and dashboards.
+
+```bash
+lightdash generate-exposures [flags]
+```
+
+| Flag | Description |
+|---|---|
+| `--project-dir <path>` | The directory of the dbt project |
+| `--output <path>` | Path where the exposures YAML file will be written |
+| `--verbose` | Show verbose output |
+
+---
+
+## Non-interactive / CI usage
+
+All commands support non-interactive execution for CI/CD pipelines.
+
+```bash
+# Full CI deploy: authenticate with token, skip all prompts
+lightdash login https://app.lightdash.cloud \
+  --token $LIGHTDASH_API_KEY \
+  --non-interactive
+
+lightdash deploy \
+  --project-dir ./dbt \
+  --profiles-dir ./profiles \
+  --assume-yes \
+  --non-interactive
+```
+
+| Scenario | Recommended approach |
+|---|---|
+| Project selection | Pass `--project <uuid>` to `login`, or `lightdash config set-project --uuid <uuid>` |
+| Confirmation prompts | Add `-y` / `--assume-yes` to the command |
+| OAuth login in CI | Not available — use `--token` or `LIGHTDASH_API_KEY` |

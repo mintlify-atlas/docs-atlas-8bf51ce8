@@ -1,0 +1,144 @@
+---
+title: "REST API endpoints for scheduled deliveries"
+description: "Create and manage Lightdash scheduled deliveries via the API. Covers chart and dashboard schedulers, delivery targets, and execution logs."
+---
+
+The scheduler API lets you create and manage scheduled deliveries — automated jobs that send chart or dashboard results to Slack, email, Google Sheets, or other destinations on a cron schedule.
+
+## List schedulers for a chart
+
+```bash
+GET /api/v1/saved-charts/{chartUuid}/schedulers
+```
+
+## List schedulers for a dashboard
+
+```bash
+GET /api/v1/dashboards/{dashboardUuid}/schedulers
+```
+
+## Create a chart scheduler
+
+```bash
+POST /api/v1/saved-charts/{chartUuid}/schedulers
+```
+
+```bash
+curl -X POST \
+  https://your-lightdash.com/api/v1/saved-charts/chart-uuid/schedulers \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Weekly Revenue Report",
+    "cron": "0 9 * * 1",
+    "format": "image",
+    "targets": [
+      {
+        "channel": "C0123ABCDEF",
+        "type": "slack"
+      }
+    ],
+    "options": {
+      "width": 1400,
+      "height": 768
+    }
+  }'
+```
+
+**Key request fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Display name for the scheduler |
+| `cron` | string | Cron expression (UTC timezone) |
+| `format` | string | `image`, `csv`, `gsheets`, or `pdf` |
+| `targets` | array | Delivery destinations (see below) |
+| `enabled` | boolean | Whether the schedule is active (default: `true`) |
+
+**Delivery targets:**
+
+<Tabs>
+  <Tab title="Slack">
+    ```json
+    {
+      "type": "slack",
+      "channel": "C0123ABCDEF"
+    }
+    ```
+    `channel` is the Slack channel ID (not name). Find it in channel details in Slack.
+  </Tab>
+  <Tab title="Email">
+    ```json
+    {
+      "type": "email",
+      "recipient": "team@example.com"
+    }
+    ```
+  </Tab>
+  <Tab title="Google Sheets">
+    ```json
+    {
+      "type": "gsheets",
+      "url": "https://docs.google.com/spreadsheets/d/your-sheet-id"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Create a dashboard scheduler
+
+```bash
+POST /api/v1/dashboards/{dashboardUuid}/schedulers
+```
+
+Same body format as chart schedulers. Dashboard schedulers support `image` and `pdf` formats.
+
+## Get a scheduler
+
+```bash
+GET /api/v1/schedulers/{schedulerUuid}
+```
+
+## Update a scheduler
+
+```bash
+PATCH /api/v1/schedulers/{schedulerUuid}
+```
+
+Patch any fields from the create payload to update name, cron, targets, or enable/disable the scheduler.
+
+## Delete a scheduler
+
+```bash
+DELETE /api/v1/schedulers/{schedulerUuid}
+```
+
+## Get delivery logs
+
+Returns the execution history for a scheduler.
+
+```bash
+GET /api/v1/schedulers/{schedulerUuid}/logs
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": [
+    {
+      "jobId": "job-uuid",
+      "schedulerUuid": "scheduler-uuid",
+      "status": "completed",
+      "createdAt": "2024-01-15T09:00:05Z",
+      "completedAt": "2024-01-15T09:00:23Z"
+    }
+  ]
+}
+```
+
+Job statuses: `started`, `completed`, `error`.
+
+<Tip>
+Use standard cron syntax with UTC timezone. Example: `0 9 * * 1` = every Monday at 9:00 AM UTC.
+</Tip>

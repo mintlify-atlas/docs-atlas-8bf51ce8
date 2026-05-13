@@ -1,0 +1,260 @@
+---
+title: "Charts and Dashboards in Lightdash"
+description: "Build charts from your dbt-defined explores, choose from 15 chart types, and organize visualizations into dashboards with cross-filtering and tabs."
+---
+
+The Explorer is Lightdash's primary analytics surface: you pick a table (backed by a dbt model), choose dimensions and metrics, run the query, and instantly see results you can shape into any of the supported chart types. Once you're happy with a chart, save it to a Space and pull it into a dashboard to share with your team. Dashboards support cross-filtering between tiles, independent filter overrides, tabs for logical grouping, and rich layout tiles like Markdown text and Loom embeds — everything you need to turn individual charts into a polished, self-service analytics experience.
+
+## The Explorer
+
+The Explorer is where every chart in Lightdash begins. Open it by clicking **Explore** in the left sidebar and selecting a table.
+
+<Steps>
+  <Step title="Select a table">
+    The left panel lists every table compiled from your dbt project. Selecting a table loads its dimensions and metrics into the field picker.
+  </Step>
+  <Step title="Choose dimensions and metrics">
+    Dimensions group your data (e.g., `order_status`, `created_date`). Metrics aggregate it (e.g., `total_revenue`, `unique_customers`). Click fields to toggle them. Active fields appear in the result table on the right.
+  </Step>
+  <Step title="Run the query">
+    Click **Run query** or press `Cmd/Ctrl + Enter`. Lightdash compiles the field selections into SQL, executes it against your warehouse, and returns results.
+  </Step>
+  <Step title="Sort and limit">
+    Click any column header in the results table to sort. Adjust the row limit with the limit picker next to **Run query** — the default is 500 rows.
+  </Step>
+</Steps>
+
+<Tip>
+  Custom dimensions let you bin a numeric field into ranges (e.g., age brackets) or write a custom SQL expression directly in the Explorer, without touching your dbt project.
+</Tip>
+
+## Chart Types
+
+Lightdash supports a wide range of chart types. Switch between them using the chart type selector in the **Chart** panel beneath the results table.
+
+<CardGroup cols={2}>
+  <Card title="Vertical bar" icon="chart-bar">
+    Grouped or stacked bars on a vertical axis. Best for comparing categories.
+  </Card>
+  <Card title="Horizontal bar" icon="chart-bar-big">
+    Bars on a horizontal axis — ideal for long category labels.
+  </Card>
+  <Card title="Line" icon="chart-line">
+    Continuous lines over time or ordered categories. Supports smooth curves and area fills.
+  </Card>
+  <Card title="Area" icon="chart-area">
+    Filled line chart. Stacking is supported for part-to-whole analysis.
+  </Card>
+  <Card title="Scatter" icon="circle-dot">
+    One dimension on each axis, useful for correlation and outlier detection.
+  </Card>
+  <Card title="Mixed" icon="chart-mixed">
+    Combine bar and line series on the same chart using dual Y axes.
+  </Card>
+  <Card title="Pie / Donut" icon="chart-pie">
+    Proportional slices. Enable the donut mode for a center hole. Value labels can be placed inside, outside, or hidden.
+  </Card>
+  <Card title="Big number" icon="hash">
+    Single KPI with optional comparison value and conditional formatting.
+  </Card>
+  <Card title="Table" icon="table">
+    Rows and columns with optional column totals, row totals, subtotals, frozen columns, and bar-style cell display.
+  </Card>
+  <Card title="Funnel" icon="filter">
+    Ordered stages showing drop-off. Data can be structured row-based or column-based.
+  </Card>
+  <Card title="Treemap" icon="layout-grid">
+    Hierarchical rectangles sized and colored by metric values.
+  </Card>
+  <Card title="Gauge" icon="gauge">
+    Speedometer-style chart with configurable color sections and min/max values.
+  </Card>
+  <Card title="Map" icon="map">
+    Geographic visualization with scatter, area, heatmap, and hexbin modes. Supports USA, world, Europe, and custom GeoJSON.
+  </Card>
+  <Card title="Sankey" icon="git-branch">
+    Flow diagram connecting source nodes to target nodes weighted by a metric.
+  </Card>
+  <Card title="Custom" icon="code">
+    Bring your own Vega-Lite specification for fully bespoke visualizations.
+  </Card>
+</CardGroup>
+
+### Cartesian chart variants
+
+The `line`, `vertical_bar`, `horizontal_bar`, `area`, `scatter`, and `mixed` chart kinds all share the underlying **Cartesian** chart type. This means they share axis, series, and grid configuration:
+
+- **X axis** — set a custom title, min/max, rotate labels, sort by category or bar totals (ascending or descending), and enable a data zoom slider.
+- **Y axis** — set a custom title, min/max, and inverse direction. Dual Y axes are supported for mixed charts.
+- **Grid lines** — toggle vertical and horizontal grid lines independently.
+- **Reference lines** — add horizontal or vertical mark lines at static values or at the series average.
+- **Series options** — per-series color, data labels (value, legend name, series name), smooth curves, symbol visibility, area fill, and stacking.
+
+## Customizing Chart Appearance
+
+Open the **Configure** panel on the right side of the Explorer to adjust the chart's visual properties.
+
+<Tabs>
+  <Tab title="Colors">
+    Each series gets a color from the project color palette. Override individual series colors by clicking the color swatch next to a series name in the **Series** section. For pie and funnel charts, override per-slice colors the same way.
+
+    Color palettes are resolved in a hierarchy: organization → project → space → dashboard → chart. Set a chart-level palette override via the chart settings to pin specific colors regardless of where the chart is used.
+  </Tab>
+  <Tab title="Axes and labels">
+    - Set custom axis titles in the **Axes** section.
+    - Rotate X axis labels using the rotation control (0°, 45°, 90°).
+    - Add data labels to each data point, choosing position (top, bottom, inside, etc.) and content (value, series name, or both).
+    - For big number charts, toggle the comparison label, flip positive/negative coloring, and choose raw vs. percentage comparison format.
+  </Tab>
+  <Tab title="Legend">
+    Control legend visibility, orientation (horizontal or vertical), position (top, bottom, left, right), and icon shape. For scrollable legends, switch the legend `type` to `scroll`.
+  </Tab>
+  <Tab title="Table columns">
+    In table chart view, reorder columns by dragging, hide columns you don't want to show, rename column headers, and freeze columns to the left so they stay visible when scrolling.
+
+    Cell display style can be set to **bar** (renders a proportional bar inside the cell) instead of plain text. Enable column totals and row totals from the **Table options** section.
+  </Tab>
+</Tabs>
+
+## Saving Charts to Spaces
+
+Charts in Lightdash are saved inside **Spaces** — folders that control who can see the content.
+
+<Steps>
+  <Step title="Click Save chart">
+    In the Explorer toolbar, click **Save chart** (or **Save** if editing an existing chart).
+  </Step>
+  <Step title="Name the chart">
+    Give the chart a descriptive name and an optional description that will appear in the Space and on dashboards.
+  </Step>
+  <Step title="Choose a space">
+    Select an existing Space from the dropdown, or type a new Space name to create one. Spaces can be private or shared with specific users.
+  </Step>
+  <Step title="Confirm">
+    Click **Save**. The chart is now available in the Space and can be added to dashboards.
+  </Step>
+</Steps>
+
+<Note>
+  Charts can also be created directly inside a dashboard without saving to a Space first. Dashboard-owned charts are accessible only from within that dashboard and are not listed in the Space.
+</Note>
+
+## Building Dashboards
+
+Dashboards are collections of tiles arranged on a free-form grid. Each tile can contain a saved chart, a SQL Runner chart, Markdown text, an embedded Loom video, or a section heading.
+
+### Creating a dashboard
+
+<Steps>
+  <Step title="Open a Space">
+    Navigate to the Space where you want the dashboard to live.
+  </Step>
+  <Step title="Click New dashboard">
+    Give the dashboard a name and an optional description.
+  </Step>
+  <Step title="Add chart tiles">
+    Click **Add tile → Saved chart**, then select charts from the list. Each chart tile shows the chart's name and can have an optional custom title.
+  </Step>
+  <Step title="Arrange the layout">
+    Drag tiles by their header to reposition them. Resize by dragging the bottom-right corner. The grid snaps to a column layout — big number tiles default to a smaller footprint than other chart types.
+  </Step>
+  <Step title="Save the dashboard">
+    Click **Save** in the toolbar. All tile positions and filter configurations are versioned, so you can roll back to any previous version from the dashboard history.
+  </Step>
+</Steps>
+
+### Tile types
+
+| Tile type | Description |
+|-----------|-------------|
+| `saved_chart` | An Explorer chart saved to a Space |
+| `sql_chart` | A chart created in SQL Runner |
+| `markdown` | Rich text using Markdown (supports headings, bold, links, etc.) |
+| `loom` | Embedded Loom video by URL |
+| `heading` | Section title with optional horizontal divider |
+
+### Adding text and image tiles
+
+Click **Add tile → Text** to insert a Markdown tile. The editor supports standard Markdown, so you can embed images with `![alt](url)`, create links, and use headings to structure the dashboard narrative. The tile's frame (border and background) can be hidden to make text feel inline with the layout rather than boxed.
+
+## Dashboard Filters
+
+Dashboard filters let you control the data shown across multiple charts at once from a single control.
+
+### Adding a filter
+
+<Steps>
+  <Step title="Enter edit mode">
+    Click **Edit dashboard** in the top-right corner.
+  </Step>
+  <Step title="Add a filter">
+    Click **Add filter** in the filter bar. Choose the dimension to filter on and set the operator and value.
+  </Step>
+  <Step title="Configure tile targets">
+    By default, the filter applies to every chart that has a matching field. Expand the **Tiles** section to disable the filter for specific tiles or remap it to a different field on a per-tile basis.
+  </Step>
+  <Step title="Save">
+    Click **Save** to persist the filter configuration.
+  </Step>
+</Steps>
+
+Dashboard filters support all three filter categories:
+
+- **Dimension filters** — applied before aggregation (e.g., filter orders by `status = 'completed'`)
+- **Metric filters** — applied after aggregation (e.g., filter results where `total_revenue > 10000`)
+- **Table calculation filters** — applied to table calculation results
+
+### Cross-filtering
+
+When a viewer clicks a data point on a chart — a bar, a pie slice, a scatter point — Lightdash applies a temporary filter across the entire dashboard matching that dimension value. This lets viewers drill into a segment across all tiles simultaneously without the dashboard owner needing to pre-configure anything.
+
+### Filter overrides
+
+Dashboard filters saved by the author establish default values. Viewers can override these values during a session by changing filter controls in the filter bar. Overrides are stored as URL search parameters, so a filtered view can be bookmarked or shared via link.
+
+<Tip>
+  Use the `isAddFilterDisabled` dashboard config flag (available via the API) to prevent viewers from adding new ad-hoc filters while still allowing them to change the values of existing filters.
+</Tip>
+
+## Dashboard Tabs
+
+Large dashboards can be split into named tabs to reduce visual clutter. Each tile belongs to exactly one tab.
+
+<Steps>
+  <Step title="Enter edit mode">
+    Click **Edit dashboard**.
+  </Step>
+  <Step title="Add a tab">
+    Click the **+** button next to the existing tab names. Enter a name for the new tab.
+  </Step>
+  <Step title="Move tiles between tabs">
+    While in edit mode, click the tab icon on any tile to assign it to a different tab.
+  </Step>
+  <Step title="Reorder tabs">
+    Drag tab names to change their order.
+  </Step>
+  <Step title="Hide tabs">
+    Individual tabs can be marked as hidden. Hidden tabs are not visible to viewers but remain accessible to editors, which is useful for staging in-progress tiles.
+  </Step>
+</Steps>
+
+<Info>
+  Dashboard filters apply across all tabs. A filter change on one tab is reflected immediately in all other tabs.
+</Info>
+
+## Date Zoom
+
+Date zoom lets viewers change the time granularity of date dimensions across all charts in a dashboard without editing the underlying charts. For example, a chart broken down by `order_date_day` can be zoomed out to `order_date_month` or `order_date_week` with a single click.
+
+The dashboard owner can configure which granularities are available and set a default granularity in the dashboard config. Date zoom can be disabled entirely by setting `isDateZoomDisabled: true` in the dashboard config.
+
+<Accordion title="Dashboard config options">
+
+| Config key | Type | Description |
+|------------|------|-------------|
+| `isDateZoomDisabled` | boolean | Disable the date zoom control |
+| `isAddFilterDisabled` | boolean | Prevent viewers from adding new filters |
+| `dateZoomGranularities` | string[] | Restrict available granularities |
+| `defaultDateZoomGranularity` | string | Default granularity on load |
+
+</Accordion>

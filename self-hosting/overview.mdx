@@ -1,0 +1,291 @@
+---
+title: "Deploy Lightdash on your own infrastructure"
+description: "Install Lightdash with Docker Compose for local or production use, deploy to Kubernetes with Helm, or launch on Render with one click."
+---
+
+Lightdash is a standard containerized Node.js application backed by PostgreSQL. You can run it anywhere Docker is supported — a single VM, a Kubernetes cluster, or a managed platform like Render. This page covers the three most common deployment paths and the environment variables that control runtime behavior.
+
+## Requirements
+
+| Component | Minimum version | Notes |
+|---|---|---|
+| Docker | 20.10+ | Required for all deployment methods |
+| Docker Compose | v2.x | For Docker Compose installs |
+| PostgreSQL | 14+ | Application database; `pgvector` extension required for AI features |
+| Node.js | 18+ | Only needed if you build from source |
+| dbt | 1.4+ | Run by Lightdash or separately via the CLI |
+
+<Info>
+  The official Docker image (`lightdash/lightdash:latest`) bundles Node.js and dbt, so you do not need to install them separately unless you are building from source.
+</Info>
+
+## Deployment methods
+
+<Tabs>
+  <Tab title="Docker Compose">
+    Docker Compose is the fastest way to get a production-ready Lightdash instance running on a single host. It starts Lightdash, PostgreSQL, MinIO (S3-compatible object storage), and a headless browser as a set of coordinated containers.
+
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/lightdash/lightdash
+        cd lightdash
+        ```
+      </Step>
+
+      <Step title="Configure environment variables">
+        Copy the example environment file and edit it:
+
+        ```bash
+        cp .env.example .env
+        ```
+
+        At minimum, set these two variables before starting:
+
+        ```bash
+        # .env
+
+        # A random string used to sign session cookies and encrypt secrets.
+        # Generate one with: openssl rand -hex 32
+        LIGHTDASH_SECRET=change_me_to_a_long_random_string
+
+        # Password for the bundled PostgreSQL container.
+        PGPASSWORD=change_me
+        ```
+
+        <Warning>
+          Never leave `LIGHTDASH_SECRET` at its default value in production. If this secret changes after startup, all existing sessions are invalidated.
+        </Warning>
+      </Step>
+
+      <Step title="Start the stack">
+        ```bash
+        docker compose up -d
+        ```
+
+        Docker pulls the images and starts all services. On a fast connection this takes 2–3 minutes on first run. Once the containers are healthy, open [http://localhost:8080](http://localhost:8080) and create your admin account.
+
+        To follow startup logs:
+
+        ```bash
+        docker compose logs -f lightdash
+        ```
+      </Step>
+
+      <Step title="Set SITE_URL for production">
+        If you're deploying behind a domain or reverse proxy, set `SITE_URL` to your public URL:
+
+        ```bash
+        # .env
+        SITE_URL=https://lightdash.yourcompany.com
+        SECURE_COOKIES=true
+        TRUST_PROXY=true
+        ```
+
+        Restart the stack after changing environment variables:
+
+        ```bash
+        docker compose down && docker compose up -d
+        ```
+      </Step>
+
+      <Step title="Connect your dbt project">
+        Open Lightdash in your browser and follow the project setup wizard to connect your dbt project and data warehouse. See [Connect your dbt project](/connect/dbt-project) for details on each connection type.
+      </Step>
+    </Steps>
+
+    ### Upgrading
+
+    Pull the latest image and restart:
+
+    ```bash
+    docker compose pull
+    docker compose down && docker compose up -d
+    ```
+
+    Lightdash runs database migrations automatically on startup, so no manual migration step is needed.
+  </Tab>
+
+  <Tab title="Kubernetes / Helm">
+    For production deployments that need horizontal scaling, high availability, or GitOps-based workflows, deploy Lightdash with the community Helm chart.
+
+    **Chart repository**: [github.com/lightdash/helm-charts](https://github.com/lightdash/helm-charts)
+
+    ### Add the Helm repository
+
+    ```bash
+    helm repo add lightdash https://lightdash.github.io/helm-charts
+    helm repo update
+    ```
+
+    ### Install with a values file
+
+    Create a `values.yaml` with your configuration:
+
+    ```yaml
+    # values.yaml
+    lightdash:
+      secret: "change_me_to_a_long_random_string"
+      siteUrl: "https://lightdash.yourcompany.com"
+
+    postgresql:
+      enabled: true
+      auth:
+        password: "change_me"
+
+    ingress:
+      enabled: true
+      hosts:
+        - host: lightdash.yourcompany.com
+          paths:
+            - path: /
+              pathType: Prefix
+    ```
+
+    Then install:
+
+    ```bash
+    helm install lightdash lightdash/lightdash \
+      --namespace lightdash \
+      --create-namespace \
+      -f values.yaml
+    ```
+
+    ### Using an external PostgreSQL database
+
+    Disable the bundled PostgreSQL and provide a connection string to your managed database (for example, Amazon RDS or Cloud SQL):
+
+    ```yaml
+    # values.yaml
+    postgresql:
+      enabled: false
+
+    externalDatabase:
+      host: your-rds-endpoint.us-east-1.rds.amazonaws.com
+      port: 5432
+      user: lightdash
+      password: "your-db-password"
+      database: lightdash
+    ```
+
+    <Note>
+      The Helm chart is maintained by the community. Check the [helm-charts repository](https://github.com/lightdash/helm-charts) for the latest chart version and all available values.
+    </Note>
+  </Tab>
+
+  <Tab title="Render (1-click)">
+    Render provides a one-click deployment that provisions Lightdash, PostgreSQL, and object storage automatically — no infrastructure knowledge required.
+
+    1. Click the **Deploy to Render** button on the [Lightdash GitHub README](https://github.com/lightdash/lightdash#readme) or go directly to the [lightdash-deploy-render](https://github.com/lightdash/lightdash-deploy-render) repository.
+    2. Render's deploy wizard asks for a `LIGHTDASH_SECRET` — generate one with `openssl rand -hex 32`.
+    3. Click **Apply** and wait for the deployment to finish (~5 minutes).
+    4. Open the service URL Render provides and complete the Lightdash setup wizard.
+
+    <Tip>
+      Render's free tier has limited resources. For teams or production use, select a paid instance type to avoid cold starts and memory limits.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Key environment variables
+
+These variables control the most important aspects of a Lightdash deployment. Set them in your `.env` file (Docker Compose) or as environment variables in your Kubernetes deployment.
+
+### Required
+
+| Variable | Description |
+|---|---|
+| `LIGHTDASH_SECRET` | Secret string used to sign session tokens. Must be long and random. Generate with `openssl rand -hex 32`. |
+| `PGPASSWORD` | Password for the PostgreSQL database. |
+
+### Network and security
+
+| Variable | Default | Description |
+|---|---|---|
+| `SITE_URL` | `http://localhost:8080` | Public URL of your Lightdash instance. Used in email links and OAuth callbacks. |
+| `PORT` | `8080` | Port the Lightdash server listens on. |
+| `SECURE_COOKIES` | `false` | Set to `true` when serving over HTTPS to mark cookies as Secure. |
+| `TRUST_PROXY` | `false` | Set to `true` when Lightdash sits behind a reverse proxy (nginx, Caddy, etc.). |
+
+### Database
+
+| Variable | Default | Description |
+|---|---|---|
+| `PGHOST` | `db` | PostgreSQL hostname. The Docker Compose default points to the bundled `db` service. |
+| `PGPORT` | `5432` | PostgreSQL port. |
+| `PGUSER` | `postgres` | PostgreSQL user. |
+| `PGDATABASE` | `postgres` | PostgreSQL database name. |
+
+### Object storage (S3 / MinIO)
+
+| Variable | Default | Description |
+|---|---|---|
+| `S3_ENDPOINT` | `http://minio:9000` | S3-compatible endpoint. Change to your bucket URL when using AWS S3 or GCS. |
+| `S3_REGION` | `us-east-1` | AWS region for S3 (or any value for MinIO). |
+| `S3_BUCKET` | `default` | Bucket name for storing exports, screenshots, and cached results. |
+| `S3_ACCESS_KEY` | `minioadmin` | S3 access key ID. |
+| `S3_SECRET_KEY` | `minioadmin` | S3 secret access key. |
+
+### Email (optional)
+
+| Variable | Description |
+|---|---|
+| `EMAIL_SMTP_HOST` | SMTP server hostname (e.g. `smtp.sendgrid.net`). |
+| `EMAIL_SMTP_PORT` | SMTP port (typically `587` for TLS). |
+| `EMAIL_SMTP_USER` | SMTP authentication username. |
+| `EMAIL_SMTP_PASSWORD` | SMTP authentication password. |
+| `EMAIL_SMTP_SENDER_EMAIL` | From address for outbound emails. |
+
+<Note>
+  Email configuration is optional but required for features like password reset, scheduled deliveries, and invite links.
+</Note>
+
+### Logging
+
+| Variable | Default | Description |
+|---|---|---|
+| `LIGHTDASH_LOG_LEVEL` | `info` | Log verbosity. One of `error`, `warn`, `info`, `http`, `debug`, `audit`. |
+
+## Architecture overview
+
+A complete Lightdash deployment consists of four services:
+
+| Service | Image | Purpose |
+|---|---|---|
+| **lightdash** | `lightdash/lightdash:latest` | Express.js API server and React frontend |
+| **db** | `pgvector/pgvector:pg15` | PostgreSQL application database |
+| **headless-browser** | Built from `docker/Dockerfile.headless-browser` | Chromium for chart screenshots and PDF exports |
+| **minio** | `coollabsio/minio:latest` | S3-compatible object storage for exports and result caching |
+
+In production Kubernetes deployments, the headless browser can be scaled independently from the main application. File storage (screenshots, exports, cached query results) flows through the S3 interface regardless of whether you use MinIO, AWS S3, or Google Cloud Storage.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The container starts but the UI doesn't load">
+    Check that `SITE_URL` matches the URL you're accessing. Mismatched URLs cause OAuth redirects and cookie issues. Run `docker compose logs lightdash` to see startup errors.
+  </Accordion>
+
+  <Accordion title="'LIGHTDASH_SECRET is required' error on startup">
+    The `LIGHTDASH_SECRET` environment variable is mandatory. Set it in your `.env` file and restart the stack. Generating it with `openssl rand -hex 32` produces a sufficiently random value.
+  </Accordion>
+
+  <Accordion title="Database connection errors">
+    Confirm `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE` match your PostgreSQL instance. In Docker Compose the default `PGHOST=db` points to the bundled database service — change it if you're using an external database.
+  </Accordion>
+
+  <Accordion title="Charts render as blank in scheduled deliveries">
+    The headless browser service must be reachable from the main Lightdash container. In Docker Compose, verify that `HEADLESS_BROWSER_HOST=headless-browser` and `HEADLESS_BROWSER_PORT=3000` are set. The headless browser container must be running and healthy.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connect your dbt project" icon="plug" href="/connect/dbt-project">
+    Set up your dbt connection and data warehouse after deploying.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Walk through building your first chart end to end.
+  </Card>
+</CardGroup>

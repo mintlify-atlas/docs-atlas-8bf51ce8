@@ -1,0 +1,120 @@
+---
+title: "REST API endpoints for Lightdash projects"
+description: "Manage Lightdash projects and trigger refreshes via the API. Covers listing, creating, updating, and deleting projects and explores."
+---
+
+Projects are the top-level containers in Lightdash that connect to your dbt project and data warehouse. The projects API lets you list, inspect, and manage projects programmatically.
+
+## List projects
+
+Returns all projects in the organization.
+
+```bash
+GET /api/v1/org/projects
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/org/projects \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": [
+    {
+      "projectUuid": "abc-123",
+      "name": "Production",
+      "type": "DEFAULT",
+      "dbtConnection": { "type": "dbt_cloud_ide" }
+    }
+  ]
+}
+```
+
+## Get a project
+
+```bash
+GET /api/v1/projects/{projectUuid}
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123 \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+## Refresh a project
+
+Triggers Lightdash to re-read the dbt manifest and update explores. Useful after deploying dbt changes.
+
+```bash
+POST /api/v1/projects/{projectUuid}/refresh
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/refresh \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+## List explores (tables)
+
+Returns all explores available in a project. Explores correspond to dbt models exposed to Lightdash.
+
+```bash
+GET /api/v1/projects/{projectUuid}/explores
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123/explores \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": [
+    {
+      "name": "orders",
+      "label": "Orders",
+      "tags": ["finance"],
+      "groupLabel": "Sales"
+    }
+  ]
+}
+```
+
+## Get an explore
+
+Returns the full explore definition including all dimensions, metrics, and joins.
+
+```bash
+GET /api/v1/projects/{projectUuid}/explores/{exploreName}
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123/explores/orders \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+## Project member management
+
+```bash
+# List project members
+GET /api/v1/projects/{projectUuid}/access
+
+# Add a member to a project
+POST /api/v1/projects/{projectUuid}/access
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/access \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"userUuid": "user-uuid", "role": "viewer"}'
+```
+
+<Note>
+Project roles are: `viewer`, `interactive_viewer`, `editor`, `developer`, `admin`. See [User Management](/admin/user-management) for details on what each role can do.
+</Note>

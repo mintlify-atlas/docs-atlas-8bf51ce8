@@ -1,0 +1,250 @@
+---
+title: "Spaces and permissions in Lightdash"
+description: "Learn how Spaces organize charts and dashboards, how access control works across org roles, project roles, and space-level permissions."
+---
+
+Spaces are the primary way to organize content in Lightdash. Every chart and dashboard lives inside a Space, and who can see or edit that content is determined by a layered permission model that combines your organization role, your project role, and any direct access granted on the Space itself. Understanding how these layers interact lets you share exactly the right content with exactly the right people.
+
+## What Spaces are
+
+A Space is a named container that holds saved charts, dashboards, and nested child Spaces. Think of them as folders: you can group a product team's dashboards together, keep a finance team's sensitive reports private, or create a shared analytics library that everyone in the project can browse.
+
+Key properties of every Space:
+
+- **Name and slug** — human-readable identifiers used in URLs.
+- **Parent space** — Spaces can be nested. A child Space can inherit permissions from its parent or override them.
+- **`inheritParentPermissions`** — when `true`, the Space uses the same access rules as its parent (or the project/org if it is a root Space). When `false`, you manage access on that Space independently.
+- **`projectMemberAccessRole`** — an optional override that gives all project members a fixed Space role (e.g. `viewer`), regardless of their individual project role.
+- **Pinned list** — Spaces and their content can be pinned to the project homepage for visibility.
+
+<Info>
+Spaces support nested hierarchies. A root Space set to `inheritParentPermissions: true` passes org/project roles all the way down to every descendant unless a child Space breaks the chain.
+</Info>
+
+## Creating and organizing Spaces
+
+### Creating a Space
+
+<Steps>
+  <Step title="Open your project">
+    Navigate to the project where you want to create a new Space.
+  </Step>
+  <Step title="Click 'New Space'">
+    From the left sidebar or the Spaces page, click **New Space** and enter a name.
+  </Step>
+  <Step title="Choose a parent (optional)">
+    To nest the Space inside an existing one, select a parent Space. Child Spaces inherit permissions from their parent by default.
+  </Step>
+  <Step title="Set initial access">
+    Decide whether the Space should inherit permissions from the project/org (`inheritParentPermissions: true`) or be managed privately. You can change this at any time.
+  </Step>
+</Steps>
+
+### Nesting Spaces
+
+Spaces can be arranged as a tree. Each node in the tree has an `inheritParentPermissions` flag that acts like a gate:
+
+```
+Organization role
+  └─► Project role
+        └─🚪 Root space (open / closed)
+              └─🚪 Child space (open / closed)
+                    └─🚪 Grandchild space
+```
+
+When every gate is open (`inheritParentPermissions: true` all the way from the root), org and project roles flow through the entire tree. If any gate is closed, only users with direct access on that Space (or its descendants) can get in.
+
+## Space access levels
+
+Every user's access to a Space resolves to one of three `SpaceMemberRole` values:
+
+| Role | What they can do |
+|---|---|
+| `viewer` | View charts and dashboards inside the Space |
+| `editor` | Create, edit, and delete charts and dashboards; manage Space settings |
+| `admin` | All editor permissions plus managing other users' access to the Space |
+
+Access can come from multiple sources — organization role, project membership, a group, a parent Space, or direct individual assignment. Lightdash resolves these into a single effective role using the following priority order (highest wins):
+
+1. Direct individual user access (`USER_ACCESS`)
+2. Direct group access on the Space (`GROUP_ACCESS`)
+3. Inherited role from a parent Space
+4. Project membership role
+5. Organization role
+
+<Note>
+Organization admins and project admins always receive `SpaceMemberRole.ADMIN` on every Space, even private ones, regardless of how permissions are configured.
+</Note>
+
+### Public vs. private Spaces
+
+The `inheritsFromOrgOrProject` field on a Space tells you whether org/project roles flow into it:
+
+- **`true` (public)** — Anyone with a project or organization role can see this Space. The org/project role is mapped down to a `SpaceMemberRole` automatically.
+- **`false` (private)** — Only users with direct access (individual or group) can see this Space. Org members without explicit access are excluded.
+
+To make a Space private, set `inheritParentPermissions: false` and do not assign `projectMemberAccessRole`. Then add specific users or groups with the roles they need.
+
+## Organization roles
+
+Organization roles are the outermost permission layer. They are set once per user across the entire organization and apply to every project unless overridden at the project level.
+
+| Role | Description |
+|---|---|
+| `member` | No project access by default. Project-level permissions must be set separately. |
+| `viewer` | Read-only access to all projects in the organization. |
+| `interactive_viewer` | Can view content, run Explore queries, and create scheduled deliveries. |
+| `editor` | Can create, edit, and delete charts, dashboards, and Spaces across all projects. |
+| `developer` | Full editor capabilities plus SQL Runner, custom fields, dbt project deployment, and content-as-code. |
+| `admin` | Full access to every project, all user management, and all organization settings. |
+
+Role descriptions come directly from `organizationMemberProfile.ts`:
+
+```typescript
+export enum OrganizationMemberRole {
+    MEMBER = 'member',
+    VIEWER = 'viewer',
+    INTERACTIVE_VIEWER = 'interactive_viewer',
+    EDITOR = 'editor',
+    DEVELOPER = 'developer',
+    ADMIN = 'admin',
+}
+```
+
+## Project roles
+
+Project roles are scoped to a single project and can grant more or fewer permissions than the user's organization role. CASL abilities are **additive**: a project role can never revoke permissions already granted by the org role, so project roles are best used to extend access for specific users.
+
+| Role | Inherits from | Additional capabilities |
+|---|---|---|
+| `viewer` | — | View public Spaces, charts, dashboards; export CSV |
+| `interactive_viewer` | viewer | Run Explore queries, create scheduled deliveries, manage their own schedules, use Semantic Viewer |
+| `editor` | interactive_viewer | Create Spaces, manage pinned items, manage all public Spaces/charts/dashboards |
+| `developer` | editor | SQL Runner, custom SQL, custom fields, pre-aggregations, deploy and compile project, content-as-code |
+| `admin` | developer | Full project management, manage all Spaces including private, manage all scheduled deliveries, analytics |
+
+Project roles are defined in `projectMemberRole.ts`:
+
+```typescript
+export enum ProjectMemberRole {
+    VIEWER = 'viewer',
+    INTERACTIVE_VIEWER = 'interactive_viewer',
+    EDITOR = 'editor',
+    DEVELOPER = 'developer',
+    ADMIN = 'admin',
+}
+```
+
+### How org roles map to project access
+
+When a user has an organization role but no explicit project membership, their org role is converted to an equivalent project role. For Space resolution:
+
+- `INTERACTIVE_VIEWER` → `viewer` Space role
+- `DEVELOPER` → `editor` Space role (granularity is reduced at the Space layer)
+
+<Tip>
+Use the `member` org role when you want to manage project access individually per person. Members get no project access by default, so you can add them to specific projects with the exact role they need.
+</Tip>
+
+## Adding users to a Space
+
+You can grant access to a Space directly for individual users or for groups.
+
+### Adding an individual user
+
+<Steps>
+  <Step title="Open Space settings">
+    Navigate to the Space and click the **Settings** or **Share** button.
+  </Step>
+  <Step title="Search for a user">
+    Type the user's name or email in the search box.
+  </Step>
+  <Step title="Assign a Space role">
+    Choose `viewer`, `editor`, or `admin`. This becomes their effective role on this Space, overriding any inherited role.
+  </Step>
+  <Step title="Save">
+    Click **Add** or **Save**. The user can now access the Space with the assigned role.
+  </Step>
+</Steps>
+
+The API representation for adding a user is:
+
+```typescript
+type AddSpaceUserAccess = {
+    userUuid: string;
+    spaceRole: SpaceMemberRole; // 'viewer' | 'editor' | 'admin'
+};
+```
+
+### Adding a group
+
+Groups let you manage Space access for teams rather than individuals:
+
+```typescript
+type AddSpaceGroupAccess = {
+    groupUuid: string;
+    spaceRole: SpaceMemberRole;
+};
+```
+
+To add a group, open Space settings, switch to the **Groups** tab, search for the group, and assign a role. All members of the group inherit the group's Space role unless they have a higher individual role on the same Space.
+
+<Note>
+Individual direct access always wins over group access. If a user has `viewer` access individually and their group has `editor` access on the same Space, the user remains a `viewer`.
+</Note>
+
+## Pinning items to a Space
+
+Pinned items appear prominently on the project homepage and within the Space. Editors and above can pin or unpin content.
+
+- **Charts** and **dashboards** can be pinned from their three-dot context menu.
+- **Spaces** themselves can be pinned to the project homepage.
+- The pin order (`pinnedListOrder`) controls the display sequence.
+
+Only users with `manage` permission on `PinnedItems` for the project can change pins. By default this requires at least the `editor` project role.
+
+## Custom roles (Enterprise)
+
+<Info>
+Custom roles are an Enterprise feature. They are available under **Settings → Custom roles** when a valid Enterprise license is active.
+</Info>
+
+Custom roles are named bundles of fine-grained permission scopes that you define yourself. Instead of the five fixed system roles, you can create a role like "Read-only analyst" that can view dashboards and export CSV but cannot run Explore queries, or a "CI deployer" that can compile and deploy the dbt project but cannot edit charts.
+
+Custom roles work at two levels:
+
+- **Project-level** — assigned on a project membership. Affects what the user can do within that project.
+- **Organization-level** — assigned on an org membership. The same role, but scopes that target org-management subjects (`OrganizationMemberProfile`, `InviteLink`, `Group`, …) take effect organization-wide.
+
+<Warning>
+A project-level custom role cannot revoke permissions that the user already has from their org role. CASL is additive: org-layer abilities always win. If you need to restrict access, set the user's org role to `member` and grant only the project-level custom role.
+</Warning>
+
+### Creating a custom role
+
+<Steps>
+  <Step title="Go to Settings → Custom roles">
+    Only organization admins can create or modify custom roles.
+  </Step>
+  <Step title="Click 'New role'">
+    Give the role a name and optional description.
+  </Step>
+  <Step title="Toggle scopes">
+    Select the permission scopes the role should grant. Scopes are grouped by category (content management, project management, org management, etc.).
+  </Step>
+  <Step title="Save and assign">
+    Save the role, then assign it to users or groups at the project or org level from the project's access settings.
+  </Step>
+</Steps>
+
+<AccordionGroup>
+  <Accordion title="What can custom roles grant?">
+    Any permission that is CASL-checked in the codebase has a corresponding scope. Common content scopes include `view:Dashboard`, `manage:Space`, `manage:SavedChart`, `create:ScheduledDeliveries`, `manage:SqlRunner`, and `manage:ContentAsCode`. The full scope vocabulary is defined in `packages/common/src/authorization/scopes.ts`.
+  </Accordion>
+  <Accordion title="What can custom roles NOT grant?">
+    Routes that bypass CASL entirely are not coverable by custom roles: SCIM endpoints (`/api/v1/scim/v2/*`), service-account creation, personal-access-token creation from a service-account token, and some session-only org-mutation routes. Instance-level operations (license, instance config) are also outside the custom-role vocabulary.
+  </Accordion>
+  <Accordion title="Can I duplicate a system role?">
+    Yes. The **Duplicate role** action on any system role creates a new custom role pre-populated with every scope that system role grants (including both project-level and org-level abilities). You can then remove scopes to create a more restricted variant.
+  </Accordion>
+</AccordionGroup>

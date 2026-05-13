@@ -1,0 +1,147 @@
+---
+title: "REST API endpoints for charts and dashboards"
+description: "Create, retrieve, update, and delete Lightdash charts and dashboards via the API. Includes running chart queries programmatically."
+---
+
+Charts (saved queries) and dashboards are the primary content objects in Lightdash. The API lets you manage them programmatically — useful for content migration, automation, and embedding workflows.
+
+## Charts
+
+### List charts in a project
+
+```bash
+GET /api/v1/projects/{projectUuid}/saved
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/projects/abc-123/saved \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+### Get a chart
+
+```bash
+GET /api/v1/saved-charts/{chartUuid}
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/saved-charts/chart-uuid \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+### Create a chart
+
+```bash
+POST /api/v1/projects/{projectUuid}/saved
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/saved \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Monthly Revenue",
+    "description": "Total revenue grouped by month",
+    "tableName": "orders",
+    "metricQuery": {
+      "exploreName": "orders",
+      "dimensions": ["orders_order_date_month"],
+      "metrics": ["orders_total_revenue"],
+      "filters": {},
+      "sorts": [{"fieldId": "orders_order_date_month", "descending": false}],
+      "limit": 500,
+      "tableCalculations": []
+    },
+    "chartConfig": { "type": "cartesian" },
+    "spaceUuid": "space-uuid"
+  }'
+```
+
+### Update a chart
+
+```bash
+PATCH /api/v1/saved-charts/{chartUuid}
+```
+
+### Delete a chart
+
+```bash
+DELETE /api/v1/saved-charts/{chartUuid}
+```
+
+### Run a chart query
+
+Executes the chart's metric query and returns results as rows.
+
+```bash
+POST /api/v1/saved-charts/{chartUuid}/results
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/saved-charts/chart-uuid/results \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": {
+    "rows": [
+      {"orders_order_date_month": "2024-01", "orders_total_revenue": 12500}
+    ],
+    "metricQuery": { ... },
+    "fields": { ... }
+  }
+}
+```
+
+## Dashboards
+
+### List dashboards in a project
+
+```bash
+GET /api/v1/projects/{projectUuid}/dashboards
+```
+
+### Get a dashboard
+
+```bash
+GET /api/v1/dashboards/{dashboardUuid}
+```
+
+### Create a dashboard
+
+```bash
+POST /api/v1/projects/{projectUuid}/dashboards
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/projects/abc-123/dashboards \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Executive Summary",
+    "description": "Key metrics for leadership",
+    "spaceUuid": "space-uuid",
+    "tiles": [],
+    "filters": { "dimensions": [], "metrics": [], "tableCalculations": [] },
+    "tabs": []
+  }'
+```
+
+### Update a dashboard
+
+```bash
+PATCH /api/v1/dashboards/{dashboardUuid}
+```
+
+### Delete a dashboard
+
+```bash
+DELETE /api/v1/dashboards/{dashboardUuid}
+```
+
+<Tip>
+Use the [content-as-code workflow](/developer/content-as-code) with `lightdash download` and `lightdash upload` for bulk chart and dashboard management instead of calling the API directly.
+</Tip>

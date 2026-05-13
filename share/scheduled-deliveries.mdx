@@ -1,0 +1,347 @@
+---
+title: "Scheduled deliveries for charts and dashboards"
+description: "Configure automated chart and dashboard deliveries to Slack, email, Microsoft Teams, Google Chat, or Google Sheets on any cron schedule in Lightdash."
+---
+
+Scheduled deliveries let you push charts and dashboards to your team without anyone needing to log in to Lightdash. You configure a schedule, choose one or more delivery destinations, pick a format, and Lightdash handles the rest — capturing the chart or dashboard at the scheduled time and sending it to the right place. This is the primary way teams use Lightdash to replace manual reporting workflows.
+
+## What can be scheduled
+
+Three resource types support scheduled deliveries, reflecting the `Scheduler` union type in the codebase:
+
+| Resource | Type field | Notes |
+|---|---|---|
+| Saved chart (`ChartScheduler`) | `savedChartUuid` set, others null | Sends a single chart |
+| Dashboard (`DashboardScheduler`) | `dashboardUuid` set, others null | Sends the full dashboard; supports dashboard filters and selected tabs |
+| SQL chart (`SqlChartScheduler`) | `savedSqlUuid` set, others null | Sends a chart built from a raw SQL query |
+
+Dashboard schedulers have extra fields:
+
+```typescript
+type DashboardScheduler = SchedulerBase & {
+    dashboardUuid: string;
+    filters?: DashboardFilterRule[];       // Apply dashboard filters at delivery time
+    parameters?: ParametersValuesMap;      // Pass parameter values
+    customViewportWidth?: number;          // Override screenshot width
+    selectedTabs: string[] | null;         // Deliver only specific dashboard tabs
+};
+```
+
+## Delivery formats
+
+Lightdash supports four delivery formats via `SchedulerFormat`:
+
+| Format | Value | Delivers |
+|---|---|---|
+| Image | `image` | Screenshot of the chart or dashboard (PNG). Optionally includes a PDF attachment. |
+| CSV | `csv` | CSV file attachment. Configurable row limits and formatting. |
+| XLSX | `xlsx` | Excel spreadsheet attachment. |
+| Google Sheets | `gsheets` | Syncs data directly to a Google Sheets tab. |
+| PDF | `pdf` | PDF export of the dashboard page. |
+
+### CSV options
+
+```typescript
+type SchedulerCsvOptions = {
+    formatted: boolean;       // Apply Lightdash number/date formatting to values
+    limit: 'table' | 'all' | number; // Row limit: 'table' = UI limit, 'all' = all rows
+    asAttachment?: boolean;   // Send as email attachment (vs. link)
+};
+```
+
+### Image options
+
+```typescript
+type SchedulerImageOptions = {
+    withPdf?: boolean; // Also attach a PDF version of the screenshot
+};
+```
+
+### Google Sheets options
+
+```typescript
+type SchedulerGsheetsOptions = {
+    gdriveId: string;                 // Target Google Drive file ID
+    gdriveName: string;               // Display name of the file
+    gdriveOrganizationName: string;   // Organization name on the Drive
+    url: string;                      // URL to the Google Sheet
+    tabName?: string;                 // Sheet tab to sync data into
+};
+```
+
+## Setting up a scheduled delivery
+
+<Steps>
+  <Step title="Open the chart or dashboard">
+    Navigate to the chart or dashboard you want to schedule. Click the three-dot menu (⋮) and select **Scheduled deliveries**, or open the **Share** menu.
+  </Step>
+  <Step title="Click 'Create new delivery'">
+    The delivery wizard opens. Give the delivery a descriptive name — this appears in notification messages and the delivery history log.
+  </Step>
+  <Step title="Set the schedule">
+    Enter a cron expression or use the frequency picker. You can also set a timezone that overrides the project default.
+
+    ```
+    ┌─────── minute (0–59)
+    │  ┌──── hour (0–23)
+    │  │  ┌─ day of month (1–31)
+    │  │  │  ┌── month (1–12)
+    │  │  │  │  ┌── day of week (0–7, 0 and 7 = Sunday)
+    *  *  *  *  *
+    ```
+
+    Common schedule examples:
+
+    | Expression | Meaning |
+    |---|---|
+    | `0 9 * * 1-5` | 9:00 AM every weekday |
+    | `0 8 * * 1` | 8:00 AM every Monday |
+    | `0 7 1 * *` | 7:00 AM on the 1st of each month |
+    | `0 */6 * * *` | Every 6 hours |
+    | `30 17 * * 5` | 5:30 PM every Friday |
+
+  </Step>
+  <Step title="Choose a format">
+    Select **Image**, **CSV**, **XLSX**, **PDF**, or **Google Sheets**. Configure format-specific options (row limit for CSV, PDF attachment for image, etc.).
+  </Step>
+  <Step title="Add delivery targets">
+    Add one or more destinations. A single delivery can send to multiple Slack channels, email addresses, Microsoft Teams webhooks, and Google Chat webhooks simultaneously.
+  </Step>
+  <Step title="Add an optional message">
+    Write a message that will accompany the delivery. Markdown is supported in Slack messages.
+  </Step>
+  <Step title="Save and enable">
+    Click **Save**. The delivery is enabled by default. You can disable it at any time from the deliveries list without deleting it.
+  </Step>
+</Steps>
+
+## Delivery channels
+
+<Tabs>
+  <Tab title="Slack">
+    Slack deliveries post an image or a message with a CSV/XLSX attachment to any channel or direct message your connected Slack bot can access.
+
+    ### Connecting Slack
+
+    <Steps>
+      <Step title="Go to Settings → Integrations → Slack">
+        Only organization admins can connect a Slack workspace.
+      </Step>
+      <Step title="Click 'Connect Slack'">
+        You are redirected to Slack's OAuth flow. Authorize the Lightdash bot for your workspace.
+      </Step>
+      <Step title="Verify the connection">
+        After authorization, the integration page shows the connected workspace. Lightdash periodically syncs the list of available channels via the `syncSlackChannels` background task.
+      </Step>
+    </Steps>
+
+    ### Configuring a Slack target
+
+    When creating or editing a delivery, add a Slack target by selecting a channel from the dropdown. The channel field maps to:
+
+    ```typescript
+    type SchedulerSlackTarget = {
+        schedulerSlackTargetUuid: string;
+        schedulerUuid: string;
+        channel: string; // Slack channel ID (e.g. C012AB3CD)
+    };
+    ```
+
+    <Tip>
+    To deliver to a private channel, first add the Lightdash bot (`/invite @Lightdash`) to that channel in Slack. Private channels appear in the dropdown only after the bot has been added.
+    </Tip>
+
+    ### What the Slack message looks like
+
+    - **Image format** — posts the chart or dashboard as an image with the delivery name and an optional message. Includes a link back to Lightdash unless `includeLinks` is set to `false`.
+    - **CSV/XLSX format** — posts a message with the file attached.
+    - **Google Sheets format** — posts a message with a link to the updated sheet.
+  </Tab>
+  <Tab title="Email">
+    Email deliveries send to any email address. Recipients do not need a Lightdash account.
+
+    ### Configuring an email target
+
+    Add recipients by email address. Each address becomes a separate `SchedulerEmailTarget`:
+
+    ```typescript
+    type SchedulerEmailTarget = {
+        schedulerEmailTargetUuid: string;
+        schedulerUuid: string;
+        recipient: string; // Email address
+    };
+    ```
+
+    You can add multiple recipients to a single delivery. Each recipient receives the same email.
+
+    ### Email format
+
+    - **Image format** — the chart or dashboard screenshot is embedded inline. A PDF is attached if `withPdf: true`.
+    - **CSV/XLSX format** — the file is attached to the email.
+    - **Google Sheets** — not available as email delivery; use the Google Sheets channel instead.
+
+    <Note>
+    Email delivery requires an SMTP server to be configured in your Lightdash instance settings. Self-hosted deployments must set `EMAIL_SMTP_*` environment variables. Lightdash Cloud handles this automatically.
+    </Note>
+  </Tab>
+  <Tab title="Microsoft Teams">
+    Microsoft Teams deliveries post to a channel via an incoming webhook URL.
+
+    ### Creating a Teams webhook
+
+    1. In Microsoft Teams, go to the channel where you want notifications.
+    2. Click **⋯ More options** → **Connectors** → **Incoming Webhook**.
+    3. Configure and copy the webhook URL.
+
+    ### Configuring a Teams target
+
+    Paste the webhook URL into the Teams target field:
+
+    ```typescript
+    type SchedulerMsTeamsTarget = {
+        schedulerMsTeamsTargetUuid: string;
+        schedulerUuid: string;
+        webhook: string; // Incoming webhook URL
+    };
+    ```
+  </Tab>
+  <Tab title="Google Chat">
+    Google Chat deliveries post to a space via an incoming webhook URL.
+
+    ### Creating a Google Chat webhook
+
+    1. Open the Google Chat space you want to deliver to.
+    2. Click the space name → **Manage webhooks**.
+    3. Create a webhook and copy the URL.
+
+    ### Configuring a Google Chat target
+
+    ```typescript
+    type SchedulerGoogleChatTarget = {
+        schedulerGoogleChatTargetUuid: string;
+        schedulerUuid: string;
+        googleChatWebhook: string; // Google Chat webhook URL
+    };
+    ```
+  </Tab>
+</Tabs>
+
+## Google Sheets sync
+
+The `gsheets` format syncs query results directly into a Google Sheet tab on a schedule. This is distinct from the email/Slack delivery channels — it writes data to Drive rather than sending a notification.
+
+<Steps>
+  <Step title="Connect Google Drive">
+    Go to **Settings → Integrations → Google Drive** and connect your Google account. Lightdash requests the Drive scope needed to write to sheets.
+  </Step>
+  <Step title="Choose Google Sheets as the format">
+    When creating a delivery, select **Google Sheets** as the format.
+  </Step>
+  <Step title="Select or create a spreadsheet">
+    Pick an existing Google Sheet from your Drive, or create a new one. Specify the tab name where data should be written (`tabName`). If the tab does not exist, Lightdash creates it.
+  </Step>
+  <Step title="Set the schedule and save">
+    The sheet is updated at each scheduled run. Existing data in the tab is overwritten.
+  </Step>
+</Steps>
+
+<Warning>
+Google Sheets sync is tied to the user who set up the Drive connection. If that user loses access to Lightdash (e.g. their account is deactivated), you must reassign the scheduler to a new owner via **Settings → Scheduled deliveries → Reassign**.
+</Warning>
+
+## Threshold alerts
+
+You can configure a delivery to fire only when a metric crosses a threshold, rather than on every scheduled run. This turns a delivery into an alert.
+
+```typescript
+type ThresholdOptions = {
+    operator: ThresholdOperator;  // 'greaterThan' | 'lessThan' | 'increasedBy' | 'decreasedBy'
+    fieldId: string;              // The metric field to watch
+    value: number;                // The threshold value
+};
+```
+
+Threshold operators and their meanings:
+
+| Operator | Fires when |
+|---|---|
+| `greaterThan` | Metric value exceeds the threshold |
+| `lessThan` | Metric value falls below the threshold |
+| `increasedBy` | Metric increased by N% or more since last run |
+| `decreasedBy` | Metric decreased by N% or more since last run |
+
+Multiple thresholds on one delivery are evaluated as AND conditions — all must be true for the delivery to fire.
+
+### Notification frequency
+
+Control how often a threshold alert fires when the condition remains true:
+
+```typescript
+enum NotificationFrequency {
+    ALWAYS = 'always', // Fire every time the condition is met
+    ONCE = 'once',     // Fire once, then suppress until condition resets
+}
+```
+
+## Managing deliveries
+
+### Viewing all deliveries
+
+- **From a chart or dashboard** — open the three-dot menu and select **Scheduled deliveries** to see all schedules for that resource.
+- **Project-level** — administrators can see all deliveries for a project under **Settings → Scheduled deliveries**.
+
+### Editing a delivery
+
+Click the delivery name to open the edit form. All fields (name, cron, format, targets, message, thresholds) can be updated. Changes take effect at the next scheduled run.
+
+### Enabling and disabling
+
+Each delivery has an `enabled` boolean. Disabling a delivery pauses it without deleting the schedule. Re-enable it when needed.
+
+### Deleting a delivery
+
+Delete a delivery from the deliveries list. Deletion is permanent — the schedule and all its history are removed.
+
+### Reassigning ownership
+
+When a user leaves or changes roles, their scheduled deliveries can be reassigned:
+
+```typescript
+type ReassignSchedulerOwnerRequest = {
+    schedulerUuids: string[];
+    newOwnerUserUuid: string;
+};
+```
+
+Admins can reassign deliveries in bulk from **Settings → Members** on the user's profile, or individually from the deliveries list.
+
+## Delivery history and logs
+
+Each delivery run is logged with a status drawn from `SchedulerJobStatus`:
+
+| Status | Meaning |
+|---|---|
+| `scheduled` | Job queued, waiting for a worker |
+| `started` | Worker is processing the delivery |
+| `completed` | Delivery sent successfully |
+| `error` | Delivery failed — check the log for details |
+
+The delivery history for a specific scheduler shows the last N runs with their status, timestamps, and any error messages. Partial failures (e.g. one Slack channel succeeded, another failed) are tracked per target in `PartialFailure` records attached to the run.
+
+<Tip>
+If a delivery consistently fails, check the error message in the history log. Common causes include: expired Google OAuth tokens (reconnect Drive), a Slack bot removed from a private channel, or an SMTP configuration issue on self-hosted instances.
+</Tip>
+
+## Who can create deliveries
+
+Delivery creation is controlled by the CASL `ScheduledDeliveries` subject:
+
+| Role | Can create | Can manage own | Can manage all |
+|---|---|---|---|
+| `viewer` | No | — | — |
+| `interactive_viewer` | Yes | Yes (own schedules only) | No |
+| `editor` | Yes | Yes | No |
+| `developer` | Yes | Yes | No |
+| `admin` | Yes | Yes | Yes (all schedules in project) |
+
+Organization-level admin also has full `manage` on `ScheduledDeliveries` across all projects.

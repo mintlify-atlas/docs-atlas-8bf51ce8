@@ -1,0 +1,293 @@
+---
+title: "Connect Lightdash to Your dbt Project"
+description: "Link Lightdash to dbt Cloud, dbt Core, or a Git-hosted repository so Lightdash can read your manifest.json and expose your models as explores."
+---
+
+Lightdash does not run its own data model layer—it reads yours. Every table, dimension, and metric in Lightdash comes directly from your dbt project's `manifest.json`. Connecting your project is the first step, and the way you connect depends on how your team runs dbt: through dbt Cloud, locally with dbt Core, or via a Git repository that Lightdash compiles on your behalf.
+
+## Connection types
+
+Lightdash supports six connection types, represented by the `DbtProjectType` enum in the source code:
+
+| Type | When to use |
+|---|---|
+| `dbt_cloud_ide` | Your team uses dbt Cloud to develop and run jobs |
+| `github` | dbt project is in a GitHub repository |
+| `gitlab` | dbt project is in a GitLab repository |
+| `bitbucket` | dbt project is in a Bitbucket repository |
+| `azure_devops` | dbt project is in an Azure DevOps repository |
+| `manifest` | You upload `manifest.json` directly (CI/CD or local) |
+
+<Note>
+The `dbt` (local CLI) type is only available when running Lightdash locally on the same machine as your dbt project directory. It is not usable in cloud deployments.
+</Note>
+
+---
+
+## dbt Cloud
+
+Lightdash connects to the [dbt Cloud Discovery API](https://docs.getdbt.com/docs/dbt-cloud-apis/discovery-api) to read compiled metadata without running dbt yourself.
+
+<Steps>
+  <Step title="Generate a dbt Cloud service token">
+    In dbt Cloud, go to **Account Settings → Service Tokens** and create a token with the **Metadata Only** permission. Copy the token value—you will not see it again.
+  </Step>
+  <Step title="Find your environment ID">
+    In dbt Cloud, open your project and navigate to **Deploy → Environments**. Click the environment you want Lightdash to read (typically your production environment). The environment ID is visible in the URL: `cloud.getdbt.com/.../environments/**12345**/`.
+  </Step>
+  <Step title="Enter the connection details in Lightdash">
+    In Lightdash, go to **Settings → Projects → Create project** and choose **dbt Cloud**. Fill in:
+
+    <ParamField path="api_key" type="string" required>
+      The service token you created. Lightdash uses this to call the dbt Cloud Discovery API.
+    </ParamField>
+
+    <ParamField path="environment_id" type="string" required>
+      The numeric ID of the dbt Cloud environment to sync from.
+    </ParamField>
+
+    <ParamField path="discovery_api_endpoint" type="string">
+      Override the Discovery API base URL. Leave blank unless your dbt Cloud instance is single-tenant or uses a custom domain (e.g., `https://metadata.YOUR_REGION.dbt.com/graphql`).
+    </ParamField>
+
+    <ParamField path="tags" type="string[]">
+      Filter which models Lightdash exposes by dbt tags. Only models with at least one matching tag will appear. Leave blank to expose all models.
+    </ParamField>
+  </Step>
+  <Step title="Refresh the project">
+    Click **Test connection**, then **Save**. Lightdash calls the Discovery API immediately to pull the current compiled state.
+  </Step>
+</Steps>
+
+<Tip>
+Set up a dbt Cloud job that runs on a schedule and triggers a Lightdash refresh via webhook after it completes. This keeps your Lightdash explores in sync with your warehouse without any manual steps.
+</Tip>
+
+---
+
+## GitHub
+
+When you connect via GitHub, Lightdash clones the branch you specify, runs `dbt compile`, and builds the manifest itself. This means Lightdash always reflects your latest committed dbt code.
+
+<Steps>
+  <Step title="Authorize Lightdash">
+    Lightdash can authenticate with GitHub in two ways:
+
+    - **Personal access token** — generate a token with `repo` scope at **GitHub → Settings → Developer settings → Personal access tokens**.
+    - **GitHub App installation** — install the Lightdash GitHub App to your organization for scoped, app-level access (recommended for teams).
+  </Step>
+  <Step title="Enter repository details">
+    <ParamField path="repository" type="string" required>
+      The full repository path, e.g., `my-org/my-dbt-project`.
+    </ParamField>
+
+    <ParamField path="branch" type="string" required>
+      The branch Lightdash should compile, e.g., `main` or `production`.
+    </ParamField>
+
+    <ParamField path="project_sub_path" type="string" required>
+      The path to your `dbt_project.yml` file relative to the repository root. Use `/` if `dbt_project.yml` is at the root. For monorepos use a path like `dbt/` or `transform/`.
+    </ParamField>
+
+    <ParamField path="host_domain" type="string">
+      Override the GitHub API hostname. Use this only if you run GitHub Enterprise Server (e.g., `github.mycompany.com`).
+    </ParamField>
+  </Step>
+  <Step title="Configure dbt compilation settings">
+    <ParamField path="target" type="string">
+      The dbt target to compile with (maps to `profiles.yml` targets). Defaults to the default target in your profile.
+    </ParamField>
+
+    <ParamField path="environment" type="array">
+      Key-value environment variables injected during `dbt compile`. Use these to pass secrets like `DBT_ENV_SECRET_TOKEN` without committing them to your repository.
+    </ParamField>
+  </Step>
+</Steps>
+
+<Warning>
+Lightdash commits to the branch you specify—it does not create pull requests. Point Lightdash at a stable, long-lived branch (like `main`) rather than a feature branch.
+</Warning>
+
+---
+
+## GitLab
+
+The GitLab connection works identically to GitHub but authenticates with a GitLab personal access token.
+
+<Steps>
+  <Step title="Create a GitLab personal access token">
+    In GitLab, go to **User Settings → Access Tokens** and create a token with the `read_repository` scope.
+  </Step>
+  <Step title="Enter the connection details">
+    <ParamField path="personal_access_token" type="string" required>
+      The GitLab access token with `read_repository` permission.
+    </ParamField>
+
+    <ParamField path="repository" type="string" required>
+      The full repository path, e.g., `my-group/my-dbt-project`.
+    </ParamField>
+
+    <ParamField path="branch" type="string" required>
+      Branch name to compile from.
+    </ParamField>
+
+    <ParamField path="project_sub_path" type="string" required>
+      Path to `dbt_project.yml` relative to the repository root.
+    </ParamField>
+
+    <ParamField path="host_domain" type="string">
+      Override the GitLab hostname for self-hosted GitLab instances (e.g., `gitlab.mycompany.com`).
+    </ParamField>
+  </Step>
+</Steps>
+
+---
+
+## Bitbucket
+
+<Steps>
+  <Step title="Create a Bitbucket app password">
+    In Bitbucket, go to **Personal settings → App passwords** and create a password with **Repositories → Read** permission.
+  </Step>
+  <Step title="Enter the connection details">
+    <ParamField path="username" type="string" required>
+      Your Bitbucket username (not email address).
+    </ParamField>
+
+    <ParamField path="personal_access_token" type="string" required>
+      The Bitbucket app password you just created.
+    </ParamField>
+
+    <ParamField path="repository" type="string" required>
+      The workspace and repository slug, e.g., `my-workspace/my-dbt-project`.
+    </ParamField>
+
+    <ParamField path="branch" type="string" required>
+      Branch to compile from.
+    </ParamField>
+
+    <ParamField path="project_sub_path" type="string" required>
+      Path to `dbt_project.yml` within the repository.
+    </ParamField>
+
+    <ParamField path="host_domain" type="string">
+      Override for Bitbucket Data Center / Server instances.
+    </ParamField>
+  </Step>
+</Steps>
+
+---
+
+## Azure DevOps
+
+<Steps>
+  <Step title="Create a personal access token">
+    In Azure DevOps, go to **User Settings → Personal Access Tokens** and create a token with **Code → Read** permission scoped to your organization.
+  </Step>
+  <Step title="Enter the connection details">
+    <ParamField path="personal_access_token" type="string" required>
+      The Azure DevOps PAT with Code Read access.
+    </ParamField>
+
+    <ParamField path="organization" type="string" required>
+      Your Azure DevOps organization name (the part of `dev.azure.com/YOUR_ORG`).
+    </ParamField>
+
+    <ParamField path="project" type="string" required>
+      The Azure DevOps project name containing the repository.
+    </ParamField>
+
+    <ParamField path="repository" type="string" required>
+      The repository name within the project.
+    </ParamField>
+
+    <ParamField path="branch" type="string" required>
+      Branch to compile from.
+    </ParamField>
+
+    <ParamField path="project_sub_path" type="string" required>
+      Path to `dbt_project.yml` within the repository.
+    </ParamField>
+  </Step>
+</Steps>
+
+---
+
+## Manifest upload (dbt Core / CI)
+
+If you run dbt yourself—locally, in CI, or on your own scheduler—you can upload the compiled `manifest.json` directly. This is the most flexible option and works with any dbt runner.
+
+<Steps>
+  <Step title="Generate the manifest">
+    Run either of these commands in your dbt project directory:
+
+    ```bash
+    dbt compile
+    # or
+    dbt run
+    ```
+
+    Both commands write `target/manifest.json`. The manifest captures your full project graph, model metadata, and column definitions.
+  </Step>
+  <Step title="Upload the manifest to Lightdash">
+    You can upload via the Lightdash UI or the CLI:
+
+    <Tabs>
+      <Tab title="Lightdash UI">
+        Go to **Settings → Projects → Create project**, choose **Upload dbt manifest**, and select your `manifest.json` file.
+      </Tab>
+      <Tab title="Lightdash CLI">
+        ```bash
+        lightdash deploy --project YOUR_PROJECT_UUID
+        ```
+
+        The CLI reads `target/manifest.json` from your current dbt project directory and uploads it to Lightdash.
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Automate uploads from CI">
+    Add a step to your CI pipeline that runs after `dbt compile` or `dbt run`:
+
+    ```yaml
+    # .github/workflows/dbt.yml (example)
+    - name: Deploy to Lightdash
+      run: lightdash deploy --project ${{ secrets.LIGHTDASH_PROJECT_UUID }}
+      env:
+        LIGHTDASH_API_KEY: ${{ secrets.LIGHTDASH_API_KEY }}
+        LIGHTDASH_URL: https://app.lightdash.cloud
+    ```
+  </Step>
+</Steps>
+
+<Note>
+Projects using manifest upload have the refresh button hidden in the UI (`hideRefreshButton: true`). Refreshes only happen when a new manifest is uploaded—Lightdash cannot re-run dbt on your behalf for this connection type.
+</Note>
+
+---
+
+## How Lightdash reads manifest.json
+
+When Lightdash receives a manifest (whether compiled internally or uploaded), it processes it as follows:
+
+1. **Reads metadata** — Extracts the `adapter_type` from `manifest.metadata` to determine which SQL dialect to use. Lightdash supports `bigquery`, `databricks`, `snowflake`, `redshift`, `postgres`, `duckdb`, `trino`, `clickhouse`, and `athena`.
+
+2. **Filters models** — Keeps only nodes where `resource_type` is `model` or `seed`, and excludes models with `config.materialized = "ephemeral"` because ephemeral models have no physical table in the warehouse.
+
+3. **Reads Lightdash metadata** — For each model, Lightdash reads the `meta` block (and `config.meta` as a fallback) to find Lightdash-specific configuration: joins, metrics, dimension overrides, and explore settings.
+
+4. **Resolves column metadata** — For each column defined in the model YAML, Lightdash reads `meta.dimension`, `meta.metrics`, and `meta.additional_dimensions` to build the field catalog.
+
+5. **Builds the explore graph** — Lightdash assembles a dependency graph using `depends_on.nodes` so it can trace lineage and resolve cross-model joins.
+
+## dbt version compatibility
+
+Lightdash supports dbt manifest versions v7 through v12, covering dbt Core versions 1.4 through 1.11. You can pin a specific dbt version per project under **Settings → Projects → dbt version**, or leave it set to `latest` to always use the most recent supported version.
+
+| Manifest version | dbt Core version |
+|---|---|
+| v7 | 1.4 |
+| v8 | 1.5 |
+| v9 | 1.6–1.7 |
+| v10 | 1.8 |
+| v11 | 1.9 |
+| v12 | 1.10–1.11 |

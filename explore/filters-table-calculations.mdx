@@ -1,0 +1,328 @@
+---
+title: "Filters and Table Calculations in Lightdash"
+description: "Apply chart-level and dashboard-level filters, write SQL-like table calculations, and use built-in templates for running totals and period-over-period."
+---
+
+Filtering and in-browser calculation are two of the most powerful tools in the Lightdash Explorer. Filters narrow your query before results leave the warehouse; table calculations let you compute new columns — running totals, percent-of-total, rank, period-over-period change — directly on the result set that comes back, without writing another dbt model. Together they give you a feedback loop that's fast enough for ad-hoc analysis and flexible enough to answer questions your dbt project didn't anticipate.
+
+## Filter Types
+
+Lightdash organizes filters into four base types that correspond to the data type of the field being filtered.
+
+| Filter type | Applicable fields |
+|-------------|-------------------|
+| `string` | Text dimensions |
+| `number` | Numeric dimensions and metrics |
+| `date` | Date and timestamp dimensions |
+| `boolean` | Boolean dimensions |
+
+### String operators
+
+| Operator | Description |
+|----------|-------------|
+| `equals` | Exact match (case-insensitive by default) |
+| `notEquals` | Excludes exact match |
+| `startsWith` | Value begins with the given string |
+| `endsWith` | Value ends with the given string |
+| `include` | Value contains the substring |
+| `doesNotInclude` | Value does not contain the substring |
+| `isNull` | Field is NULL |
+| `notNull` | Field is not NULL |
+
+### Number operators
+
+| Operator | Description |
+|----------|-------------|
+| `equals` | Exact numeric match |
+| `notEquals` | Excludes the value |
+| `lessThan` | Strictly less than |
+| `lessThanOrEqual` | Less than or equal |
+| `greaterThan` | Strictly greater than |
+| `greaterThanOrEqual` | Greater than or equal |
+| `isNull` | Field is NULL |
+| `notNull` | Field is not NULL |
+
+### Date operators
+
+Date fields extend the number operators with relative-time operators that evaluate at query run time:
+
+| Operator | Description |
+|----------|-------------|
+| `inThePast` | Date falls within the last N units before now |
+| `notInThePast` | Date does not fall within the last N units |
+| `inTheNext` | Date falls within the next N units from now |
+| `inTheCurrent` | Date falls within the current calendar unit |
+| `notInTheCurrent` | Date does not fall within the current calendar unit |
+| `inBetween` | Date is between two absolute values |
+| `notInBetween` | Date is outside the given range |
+| `inPeriodToDate` | Date falls within the current period-to-date window |
+
+Relative date filters accept a **unit of time** setting:
+
+```
+milliseconds | seconds | minutes | hours | days | weeks | months | quarters | years
+```
+
+The `completed` setting on relative date filters controls whether partial periods are included (e.g., `inThePast 1 months completed` excludes the current in-progress month).
+
+### Filter groups (AND / OR)
+
+Multiple filter rules can be combined using AND or OR logic. Filters at the same level within a group share the same combinator. Nesting groups (an `or` block inside an `and` block) creates complex compound conditions.
+
+## Applying Filters at the Chart Level
+
+Chart-level filters are part of the saved chart definition and run as part of the warehouse query.
+
+<Steps>
+  <Step title="Open the Filters panel">
+    In the Explorer, click the **Filters** tab in the left panel (next to Fields).
+  </Step>
+  <Step title="Add a filter rule">
+    Click **Add filter** and select the dimension or metric to filter on. The operator and value controls appear automatically based on the field's data type.
+  </Step>
+  <Step title="Choose AND or OR">
+    Additional filter rules are joined with AND by default. Click the combinator label to switch a group to OR.
+  </Step>
+  <Step title="Save the chart">
+    Chart filters are saved with the chart. They always apply when the chart is viewed, including when the chart is embedded in a dashboard.
+  </Step>
+</Steps>
+
+<Note>
+  Dimension filters are applied before aggregation (in the SQL `WHERE` clause). Metric filters are applied after aggregation (in the `HAVING` clause). Table calculation filters run in a subquery wrapper around the primary result set.
+</Note>
+
+## Dashboard-Level Filters
+
+Dashboard filters are applied on top of chart-level filters. They let a viewer narrow multiple charts at once from a single control in the dashboard filter bar.
+
+### How dashboard filters target charts
+
+Each dashboard filter rule has a **tile targets** map. When a filter is created, Lightdash automatically detects which tiles contain a matching field and enables the filter for those tiles. For each tile target you can:
+
+- **Enable** — apply the filter using the matched field (default)
+- **Remap** — apply the filter to a different field on that tile
+- **Disable** — exclude a specific tile from the filter entirely
+
+The `DashboardFieldTarget` type tracks this per-tile mapping:
+
+```typescript
+type DashboardFieldTarget = {
+    fieldId: string;
+    tableName: string;
+    isSqlColumn?: boolean;   // true for SQL Runner charts
+    fallbackType?: DimensionType; // used when field metadata is unavailable
+};
+```
+
+Setting a tile's target to `false` disables the filter for that tile.
+
+### Dashboard filter overrides
+
+Viewers can change dashboard filter values during their session. These overrides do not modify the saved dashboard — they are stored as URL search parameters so that filtered views can be shared via link. The override map replaces filter values while preserving the `tileTargets` configuration saved by the dashboard author.
+
+<Tip>
+  Schedulers and alerts can supply filter overrides when delivering a dashboard snapshot. This lets you send the same dashboard template to multiple recipients, each filtered to their own region or account.
+</Tip>
+
+## Date Zoom and Date Filters
+
+Date zoom is a dashboard-level control that changes the time granularity of date dimensions across all charts simultaneously. It operates independently of filters: where filters restrict *which* rows appear, date zoom changes *how* date values are grouped.
+
+Available granularities for date zoom:
+
+```
+nanosecond | microsecond | millisecond | second | minute | hour
+day | week | month | quarter | year
+```
+
+Dashboard owners can restrict the available granularities via `dateZoomGranularities` in the dashboard config and set a default with `defaultDateZoomGranularity`. Date zoom can be disabled entirely with `isDateZoomDisabled: true`.
+
+<Info>
+  Date zoom works by rewriting the time dimension's truncation level at query time. Charts must include a date dimension for date zoom to take effect on them.
+</Info>
+
+## Table Calculations
+
+Table calculations are computed columns added to the Explorer result set after the warehouse query returns. They run entirely in the browser — no additional warehouse query is needed. Because they operate on the already-fetched result set, they can reference any other field in the results by its column name.
+
+Table calculations appear as additional columns in the results table and can be used as Y-axis fields in charts.
+
+### Three ways to write a table calculation
+
+Lightdash supports three calculation formats:
+
+<Tabs>
+  <Tab title="SQL expression">
+    Write a SQL window function or expression that references result columns directly. Column names are wrapped in the warehouse's quote character automatically.
+
+    ```sql
+    -- Running total of revenue
+    SUM("orders_total_revenue") OVER (
+      ORDER BY "orders_order_date_month" ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    )
+    ```
+
+    ```sql
+    -- Percent of column total
+    CAST("orders_total_revenue" AS FLOAT) /
+    CAST(NULLIF(SUM("orders_total_revenue") OVER (), 0) AS FLOAT)
+    ```
+
+    SQL table calculations are stored in `SqlTableCalculation` objects and compiled verbatim into the subquery wrapper.
+  </Tab>
+  <Tab title="Template">
+    Choose from a set of built-in templates. Lightdash compiles each template to valid SQL for your warehouse dialect automatically. Templates handle quoting, casting, and OVER clause construction.
+
+    ```typescript
+    // Available template types
+    TableCalculationTemplateType.PERCENT_CHANGE_FROM_PREVIOUS
+    TableCalculationTemplateType.PERCENT_OF_PREVIOUS_VALUE
+    TableCalculationTemplateType.PERCENT_OF_COLUMN_TOTAL
+    TableCalculationTemplateType.RANK_IN_COLUMN
+    TableCalculationTemplateType.RUNNING_TOTAL
+    TableCalculationTemplateType.WINDOW_FUNCTION
+    ```
+
+    Stored as `TemplateTableCalculation` objects with a `template` property.
+  </Tab>
+  <Tab title="Formula">
+    Write a spreadsheet-like formula (Google Sheets syntax) that Lightdash compiles to SQL at query time. Formulas are stored as `FormulaTableCalculation` objects with a `formula` property.
+
+    ```
+    ${orders_total_revenue} / ${orders_order_count}
+    ```
+  </Tab>
+</Tabs>
+
+### Built-in template patterns
+
+<Accordion title="Running total">
+  Accumulates a metric down the result set following the current sort order.
+
+  **Compiled SQL:**
+  ```sql
+  SUM("orders_total_revenue") OVER (
+    ORDER BY "orders_order_date_month" ASC
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  )
+  ```
+
+  The ORDER BY clause is derived from the query's current sort configuration. Change the Explorer sort to change how the running total accumulates.
+</Accordion>
+
+<Accordion title="Percent of column total">
+  Divides each row's value by the sum of all values in that column.
+
+  **Compiled SQL:**
+  ```sql
+  CAST("orders_total_revenue" AS FLOAT) /
+  CAST(NULLIF(SUM("orders_total_revenue") OVER (), 0) AS FLOAT)
+  ```
+
+  Add a `partitionBy` field to compute percent-of-total within groups (e.g., percent of revenue within each region).
+</Accordion>
+
+<Accordion title="Percent change from previous">
+  Compares each row's value to the immediately preceding row using `LAG`.
+
+  **Compiled SQL:**
+  ```sql
+  (CAST("orders_total_revenue" AS FLOAT) /
+   CAST(NULLIF(LAG("orders_total_revenue") OVER (
+     ORDER BY "orders_order_date_month" ASC
+   ), 0) AS FLOAT)) - 1
+  ```
+
+  The result is a decimal (e.g., `0.12` means 12% increase). Format the table calculation as a percentage in the display settings.
+</Accordion>
+
+<Accordion title="Percent of previous value">
+  Similar to percent change but returns the ratio rather than the difference:
+
+  **Compiled SQL:**
+  ```sql
+  CAST("orders_total_revenue" AS FLOAT) /
+  CAST(NULLIF(LAG("orders_total_revenue") OVER (
+    ORDER BY "orders_order_date_month" ASC
+  ), 0) AS FLOAT)
+  ```
+
+  A value of `1.12` means 112% of the previous period (12% growth).
+</Accordion>
+
+<Accordion title="Rank in column">
+  Assigns a rank to each row based on ascending order of the chosen field.
+
+  **Compiled SQL:**
+  ```sql
+  RANK() OVER (ORDER BY "orders_total_revenue" ASC)
+  ```
+</Accordion>
+
+<Accordion title="Window function (advanced)">
+  Full control over any SQL window function: choose the function type, aggregation field, PARTITION BY, ORDER BY, and frame clause.
+
+  **Supported window functions:**
+  - `row_number` — sequential row index within the window
+  - `rank` — rank with gaps for ties
+  - `percent_rank` — relative rank as a decimal from 0 to 1
+  - `cume_dist` — cumulative distribution value
+  - `sum`, `avg`, `count`, `min`, `max` — aggregate window functions
+
+  **Frame types:** `ROWS` or `RANGE`
+
+  **Frame boundaries:**
+  - `UNBOUNDED PRECEDING`
+  - `N PRECEDING`
+  - `CURRENT ROW`
+  - `N FOLLOWING`
+  - `UNBOUNDED FOLLOWING`
+
+  **Example — 3-period moving average:**
+  ```sql
+  AVG("orders_total_revenue") OVER (
+    ORDER BY "orders_order_date_month" ASC
+    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+  )
+  ```
+</Accordion>
+
+### Period-over-period comparisons
+
+Lightdash has a first-class period-over-period (PoP) feature that generates a comparison metric alongside each existing metric. The generated metric uses `AdditionalMetric` with `generationType: 'periodOverPeriod'` and carries metadata for the base metric, time dimension, granularity, and period offset.
+
+This is distinct from the `PERCENT_CHANGE_FROM_PREVIOUS` table calculation template — PoP metrics are generated at the query level (they produce separate SQL subqueries in the warehouse), whereas table calculation templates operate on the result set returned from a single query.
+
+### Adding a table calculation in the Explorer
+
+<Steps>
+  <Step title="Click Add calculation">
+    In the Explorer's **Calculations** section (below the metrics list), click **Add calculation**.
+  </Step>
+  <Step title="Choose a method">
+    Select **SQL**, **Template**, or **Formula**. For templates, pick the pattern from the dropdown and configure the target field and any ordering/partitioning options.
+  </Step>
+  <Step title="Name and format">
+    Give the calculation a display name. Set the data type (number, string, date, boolean) and apply formatting (currency prefix, percentage, decimal places) as needed.
+  </Step>
+  <Step title="Run the query">
+    Click **Run query**. The table calculation column appears in the results table and is available for use on chart axes.
+  </Step>
+</Steps>
+
+<Warning>
+  Table calculations reference columns by their result-set name, not by the field's label. If you rename a dimension or metric in dbt, existing SQL table calculations that reference the old name will break. Template and formula calculations are less fragile because they reference fields symbolically.
+</Warning>
+
+## Filtering on Table Calculations
+
+You can apply filters on table calculation results just like on dimensions and metrics. Table calculation filters run in a subquery wrapper and accept the same operators as number and string filters.
+
+For example, to show only months where the running total exceeded 100,000:
+
+1. Add a **Running total** table calculation on `orders_total_revenue`.
+2. In the **Filters** panel, click **Add filter**, select the table calculation, choose `greaterThan`, and enter `100000`.
+
+Table calculation filters in dashboard filter configurations use the same `DashboardFilters.tableCalculations` array as dimension and metric filters, and respect the same per-tile target mapping.

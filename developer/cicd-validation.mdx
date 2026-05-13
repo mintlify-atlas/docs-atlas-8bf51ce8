@@ -1,0 +1,312 @@
+---
+title: "CI/CD Validation: Catch Broken Content Before Merge"
+description: "Run lightdash validate, lint, and pre-aggregate-audit in GitHub Actions to catch broken charts, dashboards, and metrics before merging any pull request."
+---
+
+Lightdash provides three CLI commands that are specifically designed for use in CI/CD pipelines: `lightdash validate` checks charts and dashboards against your compiled dbt models, `lightdash lint` validates content-as-code YAML files against their schema, and `lightdash pre-aggregate-audit` verifies that dashboards are served by pre-aggregates. Each exits with code `1` when issues are found, making them straightforward to wire into any CI system.
+
+## `lightdash validate`
+
+`lightdash validate` compiles your dbt project locally, submits the resulting explores to the Lightdash server, and runs the server-side validation job. The job checks every chart and dashboard in the project against the submitted explores and returns a list of errors — broken field references, missing dimensions, misconfigured metrics, and so on.
+
+```bash
+lightdash validate [flags]
+```
+
+### What it checks
+
+| Target | What is validated |
+|---|---|
+| `tables` | Explores and joins — missing models, incompatible field references |
+| `charts` | Each chart's metric query is checked against the compiled explores |
+| `dashboards` | Dashboard filters and tile references are checked against charts and explores |
+
+By default all three targets are validated. Use `--only` to limit the scope:
+
+```bash
+# Validate only charts and dashboards, skip table checks
+lightdash validate --only charts dashboards
+```
+
+### Flags
+
+<AccordionGroup>
+  <Accordion title="All flags">
+
+| Flag | Description |
+|---|---|
+| `--project <project uuid>` | Project UUID to validate. Defaults to the last preview project if `--preview` is set, otherwise the configured project. |
+| `--preview` | Validate the last preview project |
+| `--only <elems...>` | Limit validation to `charts`, `dashboards`, and/or `tables` (default: all three) |
+| `--show-chart-configuration-warnings` | Show chart configuration warnings such as unused dimensions (hidden by default) |
+| `--project-dir <path>` | The directory of the dbt project |
+| `--profiles-dir <path>` | The directory of the dbt profiles |
+| `--profile <name>` | Profile to use |
+| `--target <name>` | Target to use in `profiles.yml` |
+| `--vars <vars>` | dbt variables |
+| `--threads <number>` | Number of threads |
+| `--no-version-check` | Skip dbt version check |
+| `-s, --select <models...>` | Select models (dbt selection syntax) |
+| `-m, --models <models...>` | Alias for `--select` |
+| `--exclude <models...>` | Exclude models |
+| `--selector <selector_name>` | Use a saved selector |
+| `--state <state>` | Path to state directory |
+| `--full-refresh` | Run with `--full-refresh` |
+| `--skip-dbt-compile` | Skip `dbt compile`; use existing `./target/manifest.json` |
+| `--skip-warehouse-catalog` | Skip warehouse catalog fetch |
+| `--use-dbt-list [true\|false]` | Use `dbt list` instead of `dbt compile` (default: `true`) |
+| `--disable-timestamp-conversion [true\|false]` | Disable UTC timestamp conversion for Snowflake (default: `false`) |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+### Validate a preview environment
+
+The most common CI pattern is to create a preview project for the branch, then validate it:
+
+```bash
+# 1. Create preview (updates if it already exists)
+lightdash start-preview --name "pr-$PR_NUMBER"
+
+# 2. Validate the preview
+lightdash validate --preview
+```
+
+`--preview` tells `validate` to target the most recently created preview project rather than the production project.
+
+### Exit codes
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Validation passed — no errors found |
+| `1` | Validation found errors, or an unexpected error occurred |
+
+---
+
+## `lightdash lint`
+
+`lightdash lint` validates Lightdash content-as-code YAML files against their JSON schemas locally, without making any API calls. It catches schema violations — missing required fields, invalid field values, wrong types — before the files are uploaded.
+
+```bash
+lightdash lint [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `-p, --path <path>` | Path to a file or directory to lint (default: current directory) |
+| `-f, --format <format>` | Output format: `cli` (default) or `json` (SARIF format for IDE integration) |
+| `--verbose` | Show detailed output |
+
+### Output formats
+
+<Tabs>
+  <Tab title="CLI output (default)">
+```bash
+lightdash lint --path ./lightdash
+```
+
+Prints a human-readable list of errors to the terminal. One error per line with the file path, line number, and error message.
+  </Tab>
+  <Tab title="SARIF JSON (for CI)">
+```bash
+lightdash lint --path ./lightdash --format json > lint-results.sarif
+```
+
+Outputs [SARIF](https://sarifweb.azurewebsites.net/) format, which can be uploaded to GitHub Code Scanning or consumed by IDE extensions.
+  </Tab>
+</Tabs>
+
+### What lint checks
+
+`lightdash lint` validates against the JSON schema for content-as-code files. This includes:
+
+- Required fields (`slug`, `name`, `spaceSlug`, `version`, `contentType`)
+- Valid enum values for chart types, filter operators, dimension kinds, etc.
+- Correct structure for `metricQuery`, `chartConfig`, `tiles`, and filters
+- SQL chart schema when `contentType` is `sql_chart`
+
+<Note>
+`lint` does not check whether field references (dimensions, metrics) actually exist in the project. Use `lightdash validate` for semantic validation against compiled dbt models.
+</Note>
+
+---
+
+## `lightdash pre-aggregate-audit`
+
+Pre-aggregates (also called "result caches" or "materialized queries") can dramatically speed up dashboard load times, but only if each dashboard tile is covered by a pre-aggregate. The `pre-aggregate-audit` command queries the server to find which tiles hit or miss the pre-aggregate cache and reports the results.
+
+```bash
+lightdash pre-aggregate-audit [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--dashboard <uuidOrSlug>` | Dashboard UUID or slug to audit (required unless `--all` is set) |
+| `--all` | Audit every dashboard in the project |
+| `--project <projectUuid>` | Project UUID (defaults to `LIGHTDASH_PROJECT_UUID` env or configured project) |
+| `--json` | Emit machine-readable JSON instead of human output |
+| `--fail-on-miss` | Exit `1` if any eligible tile is a pre-aggregate miss (CI-friendly) |
+| `--verbose` | Expand the ineligible section in human output |
+
+```bash
+# Audit a single dashboard
+lightdash pre-aggregate-audit --dashboard revenue-overview
+
+# Audit all dashboards and fail if any tile misses
+lightdash pre-aggregate-audit --all --fail-on-miss
+
+# Machine-readable JSON for downstream processing
+lightdash pre-aggregate-audit --all --json > audit.json
+```
+
+---
+
+## Service accounts for CI authentication
+
+In CI environments, use a Lightdash service account API key rather than a personal access token. Service accounts are not tied to individual users and do not expire with password changes.
+
+Create a service account in **Settings → Service Accounts**, copy the API key, and store it as a CI secret.
+
+```bash
+lightdash login $LIGHTDASH_URL \
+  --token $LIGHTDASH_API_KEY \
+  --non-interactive
+```
+
+The `--token` flag accepts either a personal access token or a service account API key. The `LIGHTDASH_API_KEY` environment variable can be used in place of `--token`.
+
+<Warning>
+Grant the service account only the permissions it needs. For read-only validation, a `viewer` role is sufficient. For preview creation and content upload, use `editor` or `developer`.
+</Warning>
+
+---
+
+## Full GitHub Actions validation workflow
+
+The following workflow runs on every pull request. It creates a preview, validates it, lints content-as-code files, and deletes the preview when the PR closes.
+
+```yaml
+name: Lightdash CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+env:
+  PR_PREVIEW_NAME: "pr-${{ github.event.pull_request.number }}"
+
+jobs:
+  validate:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python and dbt
+        run: pip install dbt-core dbt-postgres
+
+      - name: Install Lightdash CLI
+        run: npm i -g @lightdash/cli
+
+      - name: Authenticate
+        run: |
+          lightdash login ${{ secrets.LIGHTDASH_URL }} \
+            --token ${{ secrets.LIGHTDASH_API_KEY }} \
+            --non-interactive
+
+      - name: Set project
+        run: |
+          lightdash config set-project \
+            --uuid ${{ secrets.LIGHTDASH_PROJECT_UUID }}
+
+      - name: Lint content-as-code files
+        run: lightdash lint --path ./lightdash
+
+      - name: Create or update preview
+        run: |
+          lightdash start-preview \
+            --name "$PR_PREVIEW_NAME" \
+            --project-dir ./dbt \
+            --profiles-dir ./profiles \
+            --skip-warehouse-catalog
+        env:
+          CI: true
+
+      - name: Validate preview
+        run: lightdash validate --preview
+
+      - name: Audit pre-aggregates (non-blocking)
+        run: |
+          lightdash pre-aggregate-audit \
+            --all \
+            --json > pre-agg-audit.json || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-aggregate-audit
+          path: pre-agg-audit.json
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Lightdash CLI
+        run: npm i -g @lightdash/cli
+
+      - name: Authenticate
+        run: |
+          lightdash login ${{ secrets.LIGHTDASH_URL }} \
+            --token ${{ secrets.LIGHTDASH_API_KEY }} \
+            --non-interactive
+
+      - name: Delete preview
+        run: lightdash stop-preview --name "$PR_PREVIEW_NAME"
+```
+
+### Secrets used in this workflow
+
+| Secret | Description |
+|---|---|
+| `LIGHTDASH_URL` | Full URL of your Lightdash instance (e.g., `https://app.lightdash.cloud`) |
+| `LIGHTDASH_API_KEY` | Service account API key |
+| `LIGHTDASH_PROJECT_UUID` | UUID of your production project (used as the source for content copy) |
+
+---
+
+## Skipping the warehouse catalog in CI
+
+Fetching the warehouse catalog requires live credentials and adds time to each CI run. If your dbt schema files define column types explicitly, skip it:
+
+```bash
+lightdash start-preview \
+  --name "$PR_PREVIEW_NAME" \
+  --skip-warehouse-catalog
+```
+
+or, for validate:
+
+```bash
+lightdash validate --skip-warehouse-catalog
+```
+
+<Note>
+`--skip-warehouse-catalog` works best when all columns in your schema YAML files have an explicit `data_type:` value. Without types, Lightdash falls back to defaults which may differ from what the warehouse reports.
+</Note>
+
+---
+
+## Exit codes reference
+
+| Command | Exit `0` | Exit `1` |
+|---|---|---|
+| `lightdash validate` | No validation errors | One or more validation errors |
+| `lightdash lint` | All files pass schema validation | One or more schema violations |
+| `lightdash pre-aggregate-audit --fail-on-miss` | All eligible tiles hit pre-aggregates | One or more eligible tiles miss |
+| `lightdash stop-preview` | Preview deleted | Preview not found |
+| `lightdash deploy` | Deploy succeeded | Compile errors (without `--ignore-errors`) or API error |

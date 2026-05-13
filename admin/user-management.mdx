@@ -1,0 +1,248 @@
+---
+title: "Managing Users, Roles, and Groups in Lightdash"
+description: "Invite users, assign organization and project roles, manage groups, configure SCIM provisioning, and control access across your Lightdash organization."
+---
+
+Managing access in Lightdash happens at two levels: the organization and the project. Every user gets an organization role that applies broadly across your instance, and optionally a project role that overrides what they can do on a specific project. Groups let you manage access at scale, and SCIM provisioning lets your identity provider keep the member list in sync automatically.
+
+## Inviting users
+
+Admins can invite new members from **Settings → Organization → Members**.
+
+<Steps>
+  <Step title="Open the invite form">
+    Go to **Settings → Organization → Members** and click **Invite users**.
+  </Step>
+  <Step title="Enter email addresses">
+    Type one or more email addresses. You can paste a comma-separated list to invite multiple people at once.
+  </Step>
+  <Step title="Choose an organization role">
+    Select the role each invitee will start with. You can change it later. See [organization roles](#organization-roles) for a description of each option.
+  </Step>
+  <Step title="Send the invite">
+    Click **Send invite**. Each person receives an email with a link to set up their account. Invite links expire after 72 hours; you can resend them from the Members table.
+  </Step>
+</Steps>
+
+<Note>
+  If your organization has **allowed email domains** configured, anyone with a matching email address can sign up without an explicit invite. Their account is created with the default role you specify in **Settings → Organization → General**.
+</Note>
+
+## Organization roles
+
+An organization role sets the baseline access a user has across every project in your organization. Roles are additive — higher roles include all permissions of lower ones.
+
+<Accordion title="Member">
+  **Internal value:** `member`
+
+  The minimum role. Members have no access to projects by default — they can only see the organization exists. Use this role when you want to grant project access explicitly on a per-project basis rather than across the board.
+
+  - Can view their own job status
+  - Can view pinned items
+  - No access to project content unless explicitly added to a project
+</Accordion>
+
+<Accordion title="Viewer">
+  **Internal value:** `viewer`
+
+  Read-only access to all projects in the organization.
+
+  - View dashboards and charts in all projects
+  - View spaces they have been granted access to
+  - Export data to CSV
+  - View dashboard comments, tags, and the metrics tree
+  - Cannot run ad-hoc queries or modify any content
+</Accordion>
+
+<Accordion title="Interactive Viewer">
+  **Internal value:** `interactive_viewer`
+
+  Everything a Viewer can do, plus the ability to run queries and create basic content.
+
+  - Run Explore queries and drill into underlying data
+  - Use the Semantic Viewer
+  - Create and manage their own scheduled deliveries
+  - Sync data to Google Sheets
+  - Post dashboard comments
+  - Manage dashboards and charts in spaces where they have editor or admin space access
+  - Create personal data apps
+</Accordion>
+
+<Accordion title="Editor">
+  **Internal value:** `editor`
+
+  Everything an Interactive Viewer can do, plus full content management across all spaces.
+
+  - Create, edit, and delete spaces, dashboards, and charts in all projects
+  - Pin and unpin items
+  - Manage tags and the metrics tree
+  - Manage all dashboard comments
+  - View organization warehouse credentials
+</Accordion>
+
+<Accordion title="Developer">
+  **Internal value:** `developer`
+
+  Everything an Editor can do, plus access to technical and dbt-facing features.
+
+  - Use the SQL runner and write custom SQL
+  - Create custom fields and custom SQL table calculations
+  - Manage virtual views and pre-aggregations
+  - View and edit source code (non-protected branches)
+  - Compile and deploy preview projects they created
+  - Use content-as-code (chart-as-code / dashboard-as-code)
+  - Run project validation
+  - Manage AI agents
+</Accordion>
+
+<Accordion title="Admin">
+  **Internal value:** `admin`
+
+  Full control over the organization.
+
+  - All Developer permissions
+  - Create, update, and delete any project (including production projects)
+  - Manage all organization members and their roles
+  - Manage groups
+  - Send invites
+  - Manage all scheduled deliveries regardless of owner
+  - Access organization analytics
+  - Manage deleted content
+  - Manage Git integrations
+  - Impersonate other active users
+</Accordion>
+
+## Project roles
+
+When a user's organization role isn't the right fit for a specific project — for example, you want someone to be a Viewer organization-wide but a Developer on one internal project — you can assign them a project-level role. Project roles use the same names (Viewer, Interactive Viewer, Editor, Developer, Admin) but apply only within that project.
+
+To assign a project role, go to **Settings → Projects → [Project name] → Access**.
+
+<Note>
+  Project roles are **additive** on top of the organization role. They cannot reduce what the organization role already grants. If a user is an Editor at the organization level, assigning them a Viewer role on a specific project has no effect — their Editor permissions still apply.
+</Note>
+
+You can also assign roles via groups (see [Groups](#groups) below). The effective role for a project is the highest role the user holds across their organization role, any group roles, and any direct project assignment.
+
+## Custom roles
+
+<Info>
+  Custom roles are an **enterprise feature**. Contact your account team to enable them.
+</Info>
+
+Custom roles let you define exactly which permissions a role grants, rather than choosing from the fixed set of system roles. They are built from individual permission scopes — for example, `view:Dashboard`, `manage:Space`, `manage:ContentAsCode` — and can be assigned to users or groups at the organization or project level.
+
+Custom roles are managed under **Settings → Custom roles**.
+
+**Creating a custom role:**
+
+<Steps>
+  <Step title="Open Custom roles">
+    Go to **Settings → Custom roles** and click **Create role**.
+  </Step>
+  <Step title="Name and describe the role">
+    Give the role a name (e.g., "CI Deployer") and an optional description so other admins know its purpose.
+  </Step>
+  <Step title="Select permission scopes">
+    Toggle on the specific permissions this role should grant. Scopes are grouped by feature area. Only scopes available on your license tier are shown.
+  </Step>
+  <Step title="Save and assign">
+    Save the role. It is now available when you assign roles to users, groups, or service accounts.
+  </Step>
+</Steps>
+
+<Warning>
+  Some permission scopes only take effect when a custom role is assigned at the **organization level**. Scopes like "manage organization members" or "manage invite links" silently have no effect when the role is assigned at the project level only. The role builder shows all scopes — watch for this if you're building a role intended for project-level assignment only.
+</Warning>
+
+You can also duplicate an existing system role to use it as a starting point.
+
+## Groups
+
+Groups let you batch users together and assign project access to the entire group, rather than configuring access user by user. This is especially useful when onboarding new team members who all need the same project permissions.
+
+### Creating a group
+
+<Steps>
+  <Step title="Open the Groups page">
+    Go to **Settings → Organization → Groups** and click **Create group**.
+  </Step>
+  <Step title="Name the group">
+    Enter a name (e.g., "Analytics Team" or "Data Engineers").
+  </Step>
+  <Step title="Add members">
+    Search for users by name or email and add them to the group. You can also add members later.
+  </Step>
+  <Step title="Assign project access">
+    Navigate to **Settings → Projects → [Project name] → Access** and add the group with the desired role. All members of the group inherit that role on the project.
+  </Step>
+</Steps>
+
+### Managing group membership
+
+From **Settings → Organization → Groups**, click any group to:
+
+- Add or remove individual members
+- View which projects the group currently has access to
+- Rename or delete the group
+
+If you use SCIM provisioning, group membership can be synced automatically from your identity provider (see [SCIM provisioning](#scim-provisioning)).
+
+## SCIM provisioning
+
+SCIM (System for Cross-domain Identity Management) lets your identity provider automatically create, update, and deprovision Lightdash users. When a user is added to the app in Okta, Azure AD, or another SCIM-compatible IdP, Lightdash creates their account automatically. When they're removed, their access is revoked.
+
+**Supported operations:**
+
+- Create users
+- Update user attributes (first name, last name, email)
+- Deactivate / reactivate users
+- Create and delete groups
+- Manage group membership
+
+To configure SCIM:
+
+<Steps>
+  <Step title="Generate a SCIM token">
+    Go to **Settings → Organization → SCIM** and click **Generate token**. Copy the token — it will not be shown again.
+  </Step>
+  <Step title="Configure your identity provider">
+    In your IdP, add Lightdash as a SCIM application. Use the **SCIM base URL** shown in the settings panel and the token you just generated as the bearer token.
+  </Step>
+  <Step title="Test the connection">
+    Run a test sync from your IdP. Lightdash should reflect any changes within a few seconds.
+  </Step>
+</Steps>
+
+<Note>
+  SCIM is a separate feature from SSO. You can use SCIM without SSO, or use SSO without SCIM. Using both together gives you the most automated user lifecycle management.
+</Note>
+
+## User attributes
+
+User attributes let you attach key-value metadata to individual users or groups and use those values in row-level security filters in your dbt models. For example, you can create a `region` attribute and filter your data so each user sees only rows matching their region.
+
+**To manage user attributes:**
+
+1. Go to **Settings → Organization → User attributes**.
+2. Click **Add attribute** and define the attribute name (e.g., `region`).
+3. Assign values to individual users or to groups. Group-level values apply to all members.
+4. Reference the attribute in your dbt model's `meta` block using the `required_attributes` key.
+
+When a query runs, Lightdash injects the user's attribute value as a filter on the underlying SQL. Users without the required attribute, or with a non-matching value, see no data for that model.
+
+## Removing users and revoking access
+
+To remove a user from your organization:
+
+1. Go to **Settings → Organization → Members**.
+2. Find the user and open their options menu.
+3. Click **Remove from organization**.
+
+Removing a user immediately prevents them from logging in. Content they created (dashboards, charts, spaces) is preserved and attributed to them; it is not deleted when the account is removed.
+
+To temporarily suspend a user without removing them, you can deactivate their account from the same menu. Deactivated users cannot log in but their membership record and content remain intact.
+
+<Warning>
+  Removing a user is irreversible through the UI. If you need to restore access, you must re-invite them with a new invite.
+</Warning>

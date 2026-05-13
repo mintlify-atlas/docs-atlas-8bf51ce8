@@ -1,0 +1,264 @@
+---
+title: "Preview Environments: Branch-Level BI Sandboxes"
+description: "Spin up isolated Lightdash preview projects per branch to review metric and dashboard changes before merging, with content copied from production automatically."
+---
+
+Preview environments give every branch its own full Lightdash project. When you run `lightdash preview` or `lightdash start-preview`, the CLI compiles your dbt project and spins up a temporary project that inherits charts and dashboards from your production project. This means you can open the Lightdash UI on your branch's data — including all existing content — before any code is merged. Previews are deleted when you press Enter in interactive mode, or explicitly by running `lightdash stop-preview`.
+
+## How preview environments work
+
+<Steps>
+  <Step title="Compile your dbt project">
+    The CLI runs `dbt compile` (or `dbt list`, based on your flags) to produce a fresh `target/manifest.json`. This manifest is the source of truth for all explores in the preview.
+  </Step>
+  <Step title="Create a preview project on the server">
+    Lightdash creates a new project of type `PREVIEW` on your instance. If a project by the same name already exists (in CI mode), it is updated in place rather than recreated.
+  </Step>
+  <Step title="Copy content from the production project">
+    Charts and dashboards are copied from the currently configured upstream project (the one set via `lightdash config set-project`). This lets you immediately see how your model changes affect existing content.
+  </Step>
+  <Step title="Deploy explores to the preview">
+    The compiled explores are deployed to the preview project. If a `manifest.json` change is detected (interactive mode only), the preview updates automatically.
+  </Step>
+  <Step title="Clean up">
+    In interactive mode, the preview is deleted when you press Enter. In CI mode, it persists until you explicitly run `lightdash stop-preview`.
+  </Step>
+</Steps>
+
+<Note>
+You must run `lightdash config set-project` before creating a preview to set the upstream source project. Without a configured project, the preview is created but no content is copied.
+</Note>
+
+---
+
+## `lightdash preview` (interactive mode)
+
+The interactive command creates a preview, waits for a keypress, then shuts down and deletes the project. It also watches `manifest.json` for changes and automatically redeploys the preview when dbt is run in another terminal.
+
+```bash
+lightdash preview [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Basic flags">
+
+| Flag | Description |
+|---|---|
+| `--name <preview name>` | Custom name for the preview. A random name is generated if omitted. |
+| `--project-dir <path>` | The directory of the dbt project (default: current directory) |
+| `--profiles-dir <path>` | The directory of the dbt profiles (default: `~/.dbt`) |
+| `--profile <name>` | Profile to use (defaults to profile name in `dbt_project.yml`) |
+| `--target <name>` | Target to use in `profiles.yml` |
+| `--target-path <path>` | Override dbt target directory |
+| `--vars <vars>` | dbt variables |
+| `--threads <number>` | Number of threads |
+| `--no-version-check` | Skip dbt version check |
+| `-s, --select <models...>` | Select models (dbt selection syntax) |
+| `-m, --models <models...>` | Select models (alias) |
+| `--exclude <models...>` | Exclude models |
+| `--selector <selector_name>` | Use a saved selector |
+| `--state <state>` | Path to state directory |
+| `--full-refresh` | Run with `--full-refresh` |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+  <Accordion title="Preview-specific flags">
+
+| Flag | Description |
+|---|---|
+| `--start-of-week <number>` | First day of the week for date functions. `0` = Monday, `6` = Sunday. |
+| `--skip-dbt-compile` | Skip `dbt compile` and use the existing `./target/manifest.json` |
+| `--skip-warehouse-catalog` | Skip warehouse catalog fetch; use YAML column types |
+| `--use-dbt-list [true\|false]` | Use `dbt list` instead of `dbt compile` to generate the manifest (default: `true`) |
+| `--ignore-errors` | Allow deploy to proceed when there are compile errors |
+| `--combine-manifest <path>` | Path to an additional `manifest.json` to merge in. Models present in the external manifest but missing from the preview manifest are added. The preview manifest wins on conflicts. |
+| `--table-configuration <prod\|all>` | `prod` copies table configuration from the production project. `all` (default) copies all configuration. |
+| `--skip-copy-content` | Do not copy charts and dashboards from the upstream project |
+| `--disable-timestamp-conversion [true\|false]` | Disable UTC timestamp conversion for Snowflake (default: `false`) |
+| `--no-warehouse-credentials` | Create the preview without warehouse credentials; inherits credentials from the upstream project |
+| `--organization-credentials <name>` | Use organization warehouse credentials by name (Enterprise Edition) |
+| `--use-batched-deploy` | Upload explores in batches |
+| `--batch-size <number>` | Explores per batch (default: `50`) |
+| `--parallel-batches <number>` | Parallel batches (default: `1`) |
+
+  </Accordion>
+</AccordionGroup>
+
+```bash
+# Basic interactive preview
+lightdash preview
+
+# Preview with a custom name and specific model selection
+lightdash preview --name "feature-new-revenue-model" -s revenue+
+```
+
+---
+
+## `lightdash start-preview` (CI mode)
+
+Creates a named preview project and exits immediately. If a preview with the same name already exists, it updates the existing project rather than creating a new one. Use this in CI pipelines to create one preview per branch.
+
+In GitHub Actions, the command automatically exports the preview URL and project UUID as step outputs (`url` and `project_uuid`) when `CI=true`.
+
+```bash
+lightdash start-preview --name <name> [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+All flags from `lightdash preview` are supported, plus:
+
+| Flag | Description |
+|---|---|
+| `--name [preview name]` | **(Required)** Name for the preview project. If a preview with this name exists, it is updated. |
+| `-y, --assume-yes` | Answer yes to prompts |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `lightdash stop-preview` (CI mode)
+
+Deletes a preview project by name. Exits with code `1` if the named preview is not found.
+
+```bash
+lightdash stop-preview --name <name> [flags]
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--name [preview name]` | Yes | Name of the preview project to delete |
+| `--verbose` | No | Show verbose output |
+
+---
+
+## The `--combine-manifest` flag
+
+When working in a monorepo or when only a subset of models is compiled in the preview branch, some explores may be missing. The `--combine-manifest` flag merges a second manifest into the preview's manifest so the full project is visible.
+
+```bash
+lightdash start-preview \
+  --name "feature-branch" \
+  --combine-manifest ./production-state/manifest.json
+```
+
+- Models present in the external manifest but **absent** from the preview manifest are merged in.
+- If a model exists in **both** manifests, the preview manifest wins.
+- This is useful when you want to preview one model change without losing visibility into the rest of the project.
+
+---
+
+## Content copying behavior
+
+By default, preview environments copy all charts and dashboards from the configured upstream project. You can control this with two flags:
+
+| Flag | Effect |
+|---|---|
+| `--skip-copy-content` | No content is copied. The preview starts empty. |
+| `--table-configuration prod` | Copy table configuration from the production project only (not all config). |
+
+If no upstream project is configured (`lightdash config set-project` not run), the preview is created without any copied content and a warning is printed.
+
+---
+
+## GitHub Actions workflow
+
+The following workflow creates a preview on every pull request push and deletes it when the PR closes.
+
+```yaml
+name: Lightdash Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  create-preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dbt
+        run: pip install dbt-core dbt-postgres
+
+      - name: Install Lightdash CLI
+        run: npm i -g @lightdash/cli
+
+      - name: Authenticate
+        run: |
+          lightdash login ${{ secrets.LIGHTDASH_URL }} \
+            --token ${{ secrets.LIGHTDASH_API_KEY }} \
+            --non-interactive
+
+      - name: Create preview
+        id: preview
+        run: |
+          lightdash start-preview \
+            --name "pr-${{ github.event.pull_request.number }}" \
+            --project-dir ./dbt \
+            --profiles-dir ./profiles \
+            --skip-warehouse-catalog
+        env:
+          CI: true
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Preview environment ready: ${{ steps.preview.outputs.url }}`
+            })
+
+  delete-preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Lightdash CLI
+        run: npm i -g @lightdash/cli
+
+      - name: Authenticate
+        run: |
+          lightdash login ${{ secrets.LIGHTDASH_URL }} \
+            --token ${{ secrets.LIGHTDASH_API_KEY }} \
+            --non-interactive
+
+      - name: Delete preview
+        run: |
+          lightdash stop-preview \
+            --name "pr-${{ github.event.pull_request.number }}"
+```
+
+<Warning>
+Store your Lightdash URL and API key as encrypted repository secrets. Never hardcode credentials in workflow files.
+</Warning>
+
+---
+
+## Using `--skip-warehouse-catalog`
+
+In CI environments, fetching the full warehouse catalog can add significant time to each preview run. If your dbt YAML files already define column types, you can skip the catalog fetch:
+
+```bash
+lightdash start-preview \
+  --name "pr-$PR_NUMBER" \
+  --skip-warehouse-catalog \
+  --project-dir ./dbt
+```
+
+This works best when your schema files use explicit `data_type:` definitions for all columns.
+
+---
+
+## Preview naming
+
+In interactive mode (`lightdash preview`), if `--name` is omitted, a unique two-word name is generated (e.g., `crimson-penguin`). In CI mode (`lightdash start-preview`), `--name` is required — the name determines whether the command creates or updates the preview.
+
+<Tip>
+Use a deterministic naming scheme in CI, such as `pr-${{ github.event.pull_request.number }}`, so that re-runs of the same workflow update the existing preview rather than accumulating orphaned projects.
+</Tip>

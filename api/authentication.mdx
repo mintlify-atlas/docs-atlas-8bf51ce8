@@ -1,0 +1,83 @@
+---
+title: "Authenticate requests to the Lightdash API"
+description: "Lightdash supports Personal Access Tokens and Service Account tokens for API authentication. Learn how to generate and use each token type."
+---
+
+Lightdash uses token-based authentication for all API requests. There are two token types for programmatic access: Personal Access Tokens (PATs) that act as your user identity, and Service Account tokens for non-human automation. Both are passed via the `Authorization` header.
+
+## Personal Access Tokens
+
+A Personal Access Token (PAT) authenticates as your Lightdash user account, with the same roles and permissions you have in the UI. PATs begin with the prefix `ldpat_`.
+
+**Generate a PAT:**
+
+1. In Lightdash, go to **Settings → Personal Access Tokens**
+2. Click **Generate new token**
+3. Give it a name and optional expiry date
+4. Copy the token — it is shown only once
+
+**Use a PAT in requests:**
+
+```bash
+curl https://your-lightdash.com/api/v1/user \
+  -H "Authorization: ApiKey ldpat_your_token_here"
+```
+
+<Note>
+PATs inherit all permissions of the user who created them. If that user is removed from the organization, the PAT stops working.
+</Note>
+
+## Service Account Tokens
+
+Service Account tokens authenticate as a dedicated non-human identity, separate from any user. They begin with `ldsvc_` and use the `Bearer` scheme. Use these for CI/CD pipelines, automation, and the Lightdash CLI in non-interactive mode.
+
+**Use a service account token:**
+
+```bash
+curl https://your-lightdash.com/api/v1/org/projects \
+  -H "Authorization: Bearer ldsvc_your_service_account_token"
+```
+
+See [Service Accounts](/admin/service-accounts) for how to create and manage service account tokens.
+
+## Code examples
+
+<CodeGroup>
+```bash curl (PAT)
+curl https://your-lightdash.com/api/v1/user \
+  -H "Authorization: ApiKey ldpat_your_token_here" \
+  -H "Content-Type: application/json"
+```
+
+```bash curl (Service Account)
+curl https://your-lightdash.com/api/v1/org/projects \
+  -H "Authorization: Bearer ldsvc_your_service_account_token" \
+  -H "Content-Type: application/json"
+```
+
+```python Python
+import requests
+
+headers = {"Authorization": "ApiKey ldpat_your_token_here"}
+response = requests.get("https://your-lightdash.com/api/v1/user", headers=headers)
+print(response.json())
+```
+
+```javascript JavaScript
+const res = await fetch("https://your-lightdash.com/api/v1/user", {
+  headers: { "Authorization": "ApiKey ldpat_your_token_here" }
+});
+const data = await res.json();
+```
+</CodeGroup>
+
+## Authentication errors
+
+| Status | Meaning |
+|--------|---------|
+| `401 Unauthorized` | Token is missing, expired, or invalid |
+| `403 Forbidden` | Token is valid but lacks permission for this action |
+
+<Tip>
+Test your token by calling `GET /api/v1/user`. A successful response returns your user profile.
+</Tip>

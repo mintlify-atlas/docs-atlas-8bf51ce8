@@ -1,0 +1,140 @@
+---
+title: "REST API endpoints for users and groups"
+description: "Manage Lightdash organization members, invite links, and groups via the API. Covers user listing, group creation, and member management."
+---
+
+The users and groups API lets you manage organization membership and group assignments programmatically — useful for integrating with your identity provider or automating onboarding workflows.
+
+## Current user
+
+### Get your user profile
+
+```bash
+GET /api/v1/user
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/user \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "results": {
+    "userUuid": "user-uuid",
+    "email": "you@example.com",
+    "firstName": "Jane",
+    "lastName": "Smith",
+    "organizationUuid": "org-uuid",
+    "role": "admin"
+  }
+}
+```
+
+## Organization members
+
+### List members
+
+```bash
+GET /api/v1/org/users
+```
+
+```bash
+curl https://your-lightdash.com/api/v1/org/users \
+  -H "Authorization: ApiKey ldpat_your_token"
+```
+
+### Update a member's org role
+
+```bash
+PATCH /api/v1/org/users/{userUuid}
+```
+
+```bash
+curl -X PATCH https://your-lightdash.com/api/v1/org/users/user-uuid \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "editor"}'
+```
+
+Valid roles: `member`, `viewer`, `interactive_viewer`, `editor`, `developer`, `admin`.
+
+### Remove a member from the organization
+
+```bash
+DELETE /api/v1/org/users/{userUuid}
+```
+
+## Invite links
+
+### Create an invite link
+
+```bash
+POST /api/v1/invite-links
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/invite-links \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"expiresAt": "2024-12-31T00:00:00Z", "role": "viewer"}'
+```
+
+**Response:** Returns an `inviteUrl` you can send to the invitee.
+
+## Groups
+
+### List groups
+
+```bash
+GET /api/v1/org/groups
+```
+
+### Create a group
+
+```bash
+POST /api/v1/org/groups
+```
+
+```bash
+curl -X POST https://your-lightdash.com/api/v1/org/groups \
+  -H "Authorization: ApiKey ldpat_your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Data Team"}'
+```
+
+### Get a group
+
+```bash
+GET /api/v1/groups/{groupUuid}
+```
+
+### Update a group
+
+```bash
+PATCH /api/v1/groups/{groupUuid}
+```
+
+### Delete a group
+
+```bash
+DELETE /api/v1/groups/{groupUuid}
+```
+
+### Add a member to a group
+
+```bash
+PUT /api/v1/groups/{groupUuid}/members/{userUuid}
+```
+
+### Remove a member from a group
+
+```bash
+DELETE /api/v1/groups/{groupUuid}/members/{userUuid}
+```
+
+<Note>
+Groups are used to grant bulk access to spaces. Adding a group to a private space grants all group members the specified space role.
+</Note>

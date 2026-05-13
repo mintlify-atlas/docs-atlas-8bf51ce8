@@ -1,0 +1,523 @@
+---
+title: "Warehouse Connection Configuration for Lightdash"
+description: "Configure warehouse credentials in Lightdash for BigQuery, Snowflake, Postgres, Redshift, Databricks, Athena, ClickHouse, Trino, and DuckDB."
+---
+
+Lightdash queries your warehouse directly—it never stores a copy of your data. Every chart, dashboard, and explore runs a SQL query against the warehouse credentials you configure here. Setting up the connection correctly is critical: Lightdash uses the same credentials for both schema inspection (building the field catalog) and user-facing queries (powering the explore UI).
+
+<Tabs>
+  <Tab title="BigQuery">
+    ## BigQuery
+
+    Lightdash supports three authentication methods for BigQuery: **Private Key** (a service account JSON key file), **SSO** (OAuth with user-delegated credentials), and **Application Default Credentials** (ADC, for environments where the host already has GCP credentials).
+
+    <ParamField path="project" type="string" required>
+      The GCP project ID that Lightdash will bill queries to and use as the default project for schema resolution (e.g., `my-company-analytics`).
+    </ParamField>
+
+    <ParamField path="dataset" type="string" required>
+      The BigQuery dataset (equivalent to a schema in other warehouses) that contains your dbt models (e.g., `dbt_production`).
+    </ParamField>
+
+    <ParamField path="authenticationType" type="string">
+      One of `private_key`, `sso`, or `adc`. Defaults to `private_key` if not specified.
+    </ParamField>
+
+    <ParamField path="keyfileContents" type="object">
+      The contents of your GCP service account JSON key file as a JSON object. Required for `private_key` authentication. Paste the entire JSON object—Lightdash parses it server-side and never exposes the key in API responses.
+    </ParamField>
+
+    <ParamField path="executionProject" type="string">
+      Run queries under a different GCP project than `project`. Useful when your data lives in a shared project but you want to manage billing separately.
+    </ParamField>
+
+    <ParamField path="location" type="string">
+      The BigQuery location or region (e.g., `US`, `EU`, `us-central1`). Defaults to `US` if omitted.
+    </ParamField>
+
+    <ParamField path="timeoutSeconds" type="number">
+      Maximum query runtime before BigQuery cancels the job. Maps to BigQuery's `job_timeout_ms`.
+    </ParamField>
+
+    <ParamField path="priority" type="string">
+      BigQuery job priority: `interactive` (default, runs immediately) or `batch` (runs when slots are available, lower cost).
+    </ParamField>
+
+    <ParamField path="maximumBytesBilled" type="number">
+      Refuse queries that would scan more than this many bytes. A cost-control safeguard. Leave blank to disable.
+    </ParamField>
+
+    <ParamField path="retries" type="number">
+      Number of times to retry a failed query before reporting an error.
+    </ParamField>
+
+    <ParamField path="threads" type="number">
+      Number of parallel threads for dbt compilation. Does not affect Lightdash query concurrency.
+    </ParamField>
+
+    <ParamField path="startOfWeek" type="number">
+      Day of the week to treat as the first day (0 = Sunday, 1 = Monday, …). Affects `WEEK` time interval truncation in explores.
+    </ParamField>
+
+    <ParamField path="dataTimezone" type="string">
+      The timezone in which timestamp columns are stored (e.g., `America/New_York`). Lightdash uses this when displaying and filtering timestamp dimensions. Defaults to `UTC`.
+    </ParamField>
+
+    <Note>
+      BigQuery does not support SSH tunneling. If you need to restrict access to BigQuery, use VPC Service Controls or authorized networks on the BigQuery side.
+    </Note>
+  </Tab>
+
+  <Tab title="Snowflake">
+    ## Snowflake
+
+    Lightdash supports four Snowflake authentication methods: **password**, **private key** (key-pair auth), **SSO** (browser-based OAuth), and **external browser** (opens a browser for auth on first connect).
+
+    <ParamField path="account" type="string" required>
+      Your Snowflake account identifier. For accounts in the AWS `us-east-1` region this looks like `xy12345`. For accounts in other regions or clouds, use the full locator: `xy12345.us-west-2.aws` or `xy12345.west-europe.azure`.
+    </ParamField>
+
+    <ParamField path="user" type="string" required>
+      The Snowflake username Lightdash authenticates as.
+    </ParamField>
+
+    <ParamField path="database" type="string" required>
+      The Snowflake database containing your dbt models.
+    </ParamField>
+
+    <ParamField path="warehouse" type="string" required>
+      The Snowflake virtual warehouse to run queries on. Lightdash resumes a suspended warehouse automatically.
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      The default schema within `database`. Lightdash uses this as the starting point for schema resolution.
+    </ParamField>
+
+    <ParamField path="authenticationType" type="string">
+      One of `password`, `private_key`, `sso`, or `external_browser`. Defaults to `password`.
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Required when `authenticationType` is `password`.
+    </ParamField>
+
+    <ParamField path="privateKey" type="string">
+      PEM-encoded private key content. Required when `authenticationType` is `private_key`.
+    </ParamField>
+
+    <ParamField path="privateKeyPass" type="string">
+      Passphrase to decrypt the private key, if encrypted.
+    </ParamField>
+
+    <ParamField path="role" type="string">
+      Snowflake role to assume after connecting. Leave blank to use the user's default role.
+    </ParamField>
+
+    <ParamField path="clientSessionKeepAlive" type="boolean">
+      Send periodic keep-alive requests to prevent the session from expiring during long-running queries. Default `false`.
+    </ParamField>
+
+    <ParamField path="queryTag" type="string">
+      A string tag Snowflake attaches to every query Lightdash sends. Useful for cost attribution in Snowflake's query history.
+    </ParamField>
+
+    <ParamField path="quotedIdentifiersIgnoreCase" type="boolean">
+      When `true`, Snowflake treats quoted identifiers as case-insensitive. Match this to your Snowflake account's `QUOTED_IDENTIFIERS_IGNORE_CASE` parameter.
+    </ParamField>
+
+    <ParamField path="disableTimestampConversion" type="boolean">
+      By default, Lightdash wraps all timestamp columns with `CONVERT_TIMEZONE('UTC', col)` so they are displayed in UTC. Set to `true` only if all your timestamps are already stored in UTC and you want to skip the conversion. Defaults to `false`.
+    </ParamField>
+
+    <ParamField path="timeoutSeconds" type="number">
+      Cancel queries that run longer than this many seconds.
+    </ParamField>
+
+    <ParamField path="accessUrl" type="string">
+      Override the Snowflake connection URL. Used for PrivateLink endpoints (e.g., `https://xy12345.privatelink.snowflakecomputing.com`).
+    </ParamField>
+
+    <Note>
+      Snowflake does not route through SSH tunnels. Use PrivateLink (`accessUrl`) for private network connectivity.
+    </Note>
+  </Tab>
+
+  <Tab title="PostgreSQL">
+    ## PostgreSQL
+
+    <ParamField path="host" type="string" required>
+      Hostname or IP address of the PostgreSQL server (e.g., `db.mycompany.com` or `127.0.0.1`).
+    </ParamField>
+
+    <ParamField path="port" type="number" required>
+      TCP port. Standard PostgreSQL port is `5432`.
+    </ParamField>
+
+    <ParamField path="dbname" type="string" required>
+      The database name to connect to.
+    </ParamField>
+
+    <ParamField path="user" type="string" required>
+      PostgreSQL username.
+    </ParamField>
+
+    <ParamField path="password" type="string" required>
+      PostgreSQL password.
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      Default schema within `dbname`. Typically `public` or your dbt target schema.
+    </ParamField>
+
+    <ParamField path="sslmode" type="string">
+      SSL mode: `disable`, `allow`, `prefer`, `require`, `verify-ca`, or `verify-full`. Defaults to `prefer`.
+    </ParamField>
+
+    <ParamField path="sslcert" type="string">
+      PEM content of the client certificate for mutual TLS.
+    </ParamField>
+
+    <ParamField path="sslkey" type="string">
+      PEM content of the client private key for mutual TLS.
+    </ParamField>
+
+    <ParamField path="sslrootcert" type="string">
+      PEM content of the CA certificate to verify the server's certificate.
+    </ParamField>
+
+    <ParamField path="keepalivesIdle" type="number">
+      Seconds of idle time before the TCP keepalive probe is sent. Useful for connections through firewalls that close idle connections.
+    </ParamField>
+
+    <ParamField path="searchPath" type="string">
+      Override the PostgreSQL `search_path` for schema resolution.
+    </ParamField>
+
+    <ParamField path="role" type="string">
+      Issue `SET ROLE` after connecting to assume this PostgreSQL role.
+    </ParamField>
+
+    <ParamField path="timeoutSeconds" type="number">
+      Query timeout in seconds. Lightdash issues `SET statement_timeout` before each query.
+    </ParamField>
+
+    ### SSH tunneling
+
+    PostgreSQL supports SSH tunneling. Enable it when your database is in a private network not directly reachable from Lightdash.
+
+    <ParamField path="useSshTunnel" type="boolean">
+      Set to `true` to enable the SSH tunnel.
+    </ParamField>
+
+    <ParamField path="sshTunnelHost" type="string">
+      Hostname of the SSH bastion server.
+    </ParamField>
+
+    <ParamField path="sshTunnelPort" type="number">
+      SSH port on the bastion. Defaults to `22`.
+    </ParamField>
+
+    <ParamField path="sshTunnelUser" type="string">
+      Username to authenticate to the SSH bastion.
+    </ParamField>
+
+    <ParamField path="sshTunnelPublicKey" type="string">
+      Lightdash-generated public key to add to the bastion's `~/.ssh/authorized_keys`. Lightdash displays this key after you enable the tunnel.
+    </ParamField>
+  </Tab>
+
+  <Tab title="Redshift">
+    ## Amazon Redshift
+
+    Redshift uses the same driver as PostgreSQL, so the connection fields are similar.
+
+    <ParamField path="host" type="string" required>
+      Redshift cluster endpoint (e.g., `my-cluster.abc123.us-east-1.redshift.amazonaws.com`). For Redshift Serverless, use the workgroup endpoint.
+    </ParamField>
+
+    <ParamField path="port" type="number" required>
+      Redshift port. Default is `5439`.
+    </ParamField>
+
+    <ParamField path="dbname" type="string" required>
+      Database name to connect to.
+    </ParamField>
+
+    <ParamField path="user" type="string" required>
+      Redshift username.
+    </ParamField>
+
+    <ParamField path="password" type="string" required>
+      Redshift password.
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      Default schema within `dbname`.
+    </ParamField>
+
+    <ParamField path="sslmode" type="string">
+      SSL mode. Redshift defaults to `prefer`.
+    </ParamField>
+
+    <ParamField path="ra3Node" type="boolean">
+      Set to `true` if your cluster uses RA3 nodes with cross-database querying enabled. This enables Redshift-specific catalog features.
+    </ParamField>
+
+    <ParamField path="keepalivesIdle" type="number">
+      Seconds of idle time before a TCP keepalive is sent.
+    </ParamField>
+
+    <ParamField path="timeoutSeconds" type="number">
+      Query timeout in seconds.
+    </ParamField>
+
+    ### SSH tunneling
+
+    Redshift supports SSH tunneling with the same fields as PostgreSQL: `useSshTunnel`, `sshTunnelHost`, `sshTunnelPort`, `sshTunnelUser`, and `sshTunnelPublicKey`.
+  </Tab>
+
+  <Tab title="Databricks">
+    ## Databricks
+
+    Lightdash supports three Databricks authentication methods: **Personal Access Token**, **OAuth M2M** (Service Principal), and **OAuth U2M** (user-delegated OAuth).
+
+    <ParamField path="serverHostName" type="string" required>
+      The Databricks workspace hostname (e.g., `adb-1234567890123456.16.azuredatabricks.net`). Do not include `https://`.
+    </ParamField>
+
+    <ParamField path="httpPath" type="string" required>
+      The HTTP path of the cluster or SQL warehouse to connect to (e.g., `/sql/1.0/warehouses/abc123def456`). Find this in the Databricks UI under the cluster or warehouse's **Connection details** tab.
+    </ParamField>
+
+    <ParamField path="database" type="string" required>
+      The Databricks schema (confusingly named `database` in Lightdash for historical compatibility). This is the schema within your Unity Catalog that contains your dbt models.
+    </ParamField>
+
+    <ParamField path="catalog" type="string">
+      The Unity Catalog catalog name (e.g., `main` or `my_catalog`). Leave blank if you are not using Unity Catalog.
+    </ParamField>
+
+    <ParamField path="authenticationType" type="string">
+      One of `personal_access_token`, `oauth_m2m`, or `oauth_u2m`. Defaults to `personal_access_token`.
+    </ParamField>
+
+    <ParamField path="personalAccessToken" type="string">
+      Databricks personal access token. Required when `authenticationType` is `personal_access_token`.
+    </ParamField>
+
+    <ParamField path="oauthClientId" type="string">
+      Service principal client ID. Required when `authenticationType` is `oauth_m2m`.
+    </ParamField>
+
+    <ParamField path="oauthClientSecret" type="string">
+      Service principal client secret. Required when `authenticationType` is `oauth_m2m`.
+    </ParamField>
+
+    <ParamField path="compute" type="array">
+      Additional compute endpoints to register. Each entry has `name` (a display label) and `httpPath` (the HTTP path of that cluster or warehouse). Users can then switch between compute targets when running queries.
+    </ParamField>
+
+    <Note>
+      Databricks does not support SSH tunneling. For private network access, use Databricks PrivateLink or a Databricks-native network policy.
+    </Note>
+  </Tab>
+
+  <Tab title="Athena">
+    ## Amazon Athena
+
+    Lightdash connects to Athena using the AWS SDK, authenticating with either an **access key pair** or an **IAM role** (assumed via `AssumeRole`).
+
+    <ParamField path="region" type="string" required>
+      AWS region where your Athena workgroup is located (e.g., `us-east-1`, `eu-west-1`).
+    </ParamField>
+
+    <ParamField path="database" type="string" required>
+      The Glue Data Catalog database (schema) containing your dbt models.
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      Default schema used for schema resolution. Typically matches `database`.
+    </ParamField>
+
+    <ParamField path="s3StagingDir" type="string" required>
+      S3 URI where Athena writes query results (e.g., `s3://my-bucket/athena-results/`). Lightdash reads results from this location.
+    </ParamField>
+
+    <ParamField path="s3DataDir" type="string">
+      S3 URI prefix where your dbt model data lives. Used only for certain schema inspection operations.
+    </ParamField>
+
+    <ParamField path="authenticationType" type="string">
+      One of `access_key` or `iam_role`. Defaults to `access_key`.
+    </ParamField>
+
+    <ParamField path="accessKeyId" type="string">
+      AWS access key ID. Required when `authenticationType` is `access_key`.
+    </ParamField>
+
+    <ParamField path="secretAccessKey" type="string">
+      AWS secret access key. Required when `authenticationType` is `access_key`.
+    </ParamField>
+
+    <ParamField path="assumeRoleArn" type="string">
+      ARN of the IAM role to assume. Required when `authenticationType` is `iam_role`.
+    </ParamField>
+
+    <ParamField path="assumeRoleExternalId" type="string">
+      External ID for the `AssumeRole` call. Required if the role's trust policy mandates an external ID.
+    </ParamField>
+
+    <ParamField path="workGroup" type="string">
+      Athena workgroup name. Defaults to `primary`. Use this to apply workgroup-level query limits and cost controls.
+    </ParamField>
+
+    <ParamField path="numRetries" type="number">
+      Number of times to retry failed Athena queries.
+    </ParamField>
+
+    <Note>
+      Athena does not support SSH tunneling. Use VPC endpoints or AWS PrivateLink to keep traffic off the public internet.
+    </Note>
+  </Tab>
+
+  <Tab title="ClickHouse">
+    ## ClickHouse
+
+    <ParamField path="host" type="string" required>
+      Hostname of the ClickHouse server (e.g., `my-cluster.clickhouse.cloud`).
+    </ParamField>
+
+    <ParamField path="port" type="number" required>
+      Port to connect on. For HTTPS (native protocol over TLS) use `8443`. For plain HTTP use `8123`.
+    </ParamField>
+
+    <ParamField path="user" type="string" required>
+      ClickHouse username.
+    </ParamField>
+
+    <ParamField path="password" type="string" required>
+      ClickHouse password.
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      The ClickHouse database (schema) containing your dbt models. Note: ClickHouse has no separate "database" concept at the connection level—`schema` maps directly to the ClickHouse database.
+    </ParamField>
+
+    <ParamField path="secure" type="boolean">
+      Use TLS for the connection. Set to `true` when using port `8443`. Defaults to `false`.
+    </ParamField>
+
+    <ParamField path="timeoutSeconds" type="number">
+      Query timeout in seconds.
+    </ParamField>
+
+    <Note>
+      ClickHouse does not support SSH tunneling in Lightdash. ClickHouse Cloud provides IP allow-listing and private endpoints for network security.
+    </Note>
+  </Tab>
+
+  <Tab title="Trino">
+    ## Trino
+
+    <ParamField path="host" type="string" required>
+      Trino coordinator hostname (e.g., `trino.mycompany.com`).
+    </ParamField>
+
+    <ParamField path="port" type="number" required>
+      Port the Trino coordinator listens on. Default is `8080` (HTTP) or `8443` (HTTPS).
+    </ParamField>
+
+    <ParamField path="user" type="string" required>
+      Trino username.
+    </ParamField>
+
+    <ParamField path="password" type="string" required>
+      Trino password. Leave blank if your cluster is configured for no-auth (not recommended for production).
+    </ParamField>
+
+    <ParamField path="dbname" type="string" required>
+      The Trino catalog to connect to (e.g., `hive`, `iceberg`, `delta`).
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      Default schema within the catalog.
+    </ParamField>
+
+    <ParamField path="http_scheme" type="string" required>
+      Either `http` or `https`. Use `https` for production clusters with TLS enabled.
+    </ParamField>
+
+    <ParamField path="source" type="string">
+      A string label Trino attaches to all queries from this connection, visible in `system.runtime.queries`. Useful for attribution (e.g., `lightdash`).
+    </ParamField>
+
+    <Note>
+      Trino does not support SSH tunneling in Lightdash.
+    </Note>
+  </Tab>
+
+  <Tab title="DuckDB">
+    ## DuckDB
+
+    Lightdash's DuckDB integration targets [MotherDuck](https://motherduck.com), the cloud-hosted DuckDB service. Local DuckDB files are not supported in production deployments.
+
+    <ParamField path="database" type="string" required>
+      The MotherDuck database name (e.g., `my_analytics`).
+    </ParamField>
+
+    <ParamField path="schema" type="string" required>
+      The default schema within the database.
+    </ParamField>
+
+    <ParamField path="token" type="string" required>
+      MotherDuck service token. Generate one in the MotherDuck UI under **Settings → Service tokens**.
+    </ParamField>
+
+    <ParamField path="threads" type="number">
+      Number of threads DuckDB uses for parallel query execution.
+    </ParamField>
+
+    <Note>
+      DuckDB / MotherDuck does not support SSH tunneling.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## SSH tunneling
+
+Lightdash supports SSH tunneling for **PostgreSQL** and **Redshift** connections. Use a tunnel when your database is in a private subnet that is not directly reachable from Lightdash's servers.
+
+```
+Lightdash → SSH bastion (public) → PostgreSQL (private subnet)
+```
+
+When you enable the tunnel, Lightdash generates an RSA key pair. The public key is displayed in the connection settings—copy it and add it to `~/.ssh/authorized_keys` on your bastion host for the user specified in `sshTunnelUser`.
+
+<Warning>
+SSH tunneling adds latency to every query. If your database is in a cloud VPC, consider using VPC peering or a PrivateLink endpoint instead—these provide lower latency with equivalent security.
+</Warning>
+
+### SSH tunnel fields
+
+| Field | Description |
+|---|---|
+| `useSshTunnel` | Enable the tunnel |
+| `sshTunnelHost` | Hostname of the SSH bastion server |
+| `sshTunnelPort` | SSH port (default `22`) |
+| `sshTunnelUser` | Username on the bastion |
+| `sshTunnelPublicKey` | Read-only. Lightdash's public key to add to `authorized_keys` |
+
+---
+
+## Common fields across warehouses
+
+Several fields appear in most warehouse credentials and follow the same semantics everywhere:
+
+| Field | Description |
+|---|---|
+| `startOfWeek` | Day used as week start for `WEEK` time truncation. `0` = Sunday, `1` = Monday, …, `6` = Saturday. |
+| `dataTimezone` | Timezone in which timestamp columns are stored. Lightdash converts timestamps to this timezone for display. Defaults to `UTC`. |
+| `requireUserCredentials` | When `true`, each Lightdash user must authenticate to the warehouse individually (SSO / OAuth). The project-level credentials are not used for user-facing queries. |
+| `threads` | Parallelism for dbt compilation steps only—does not affect Lightdash query concurrency. |

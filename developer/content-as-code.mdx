@@ -1,0 +1,344 @@
+---
+title: "Content as Code: Charts and Dashboards in Git"
+description: "Download charts and dashboards as YAML, version them in Git, and upload to any project — enabling GitOps promotion between preview, staging, and production."
+---
+
+Content as code lets you treat Lightdash charts and dashboards as files in your repository, just like dbt models. Run `lightdash download` to export all content to YAML, commit those files to Git, and run `lightdash upload` to deploy them to any project — including a preview environment or a staging instance. This workflow enables code review for BI content, reproducible deployments, and promotion pipelines between environments.
+
+## How it works
+
+<Steps>
+  <Step title="Download content">
+    `lightdash download` calls the Lightdash API and serializes every chart and dashboard to a YAML file. Files are organized into `charts/` and `dashboards/` directories. Space metadata is written as `.space.yml` files.
+  </Step>
+  <Step title="Edit and review">
+    YAML files are plain text — you can edit them in any editor, review changes in a pull request, and use standard Git workflows to track history.
+  </Step>
+  <Step title="Upload to a target project">
+    `lightdash upload` reads the YAML files and calls the Lightdash upsert API for each chart and dashboard. Only files modified since the last download are uploaded unless `--force` is set.
+  </Step>
+</Steps>
+
+---
+
+## `lightdash download`
+
+Downloads all charts and dashboards from a project to a local directory. By default, files are saved to `./lightdash/charts/` and `./lightdash/dashboards/`. Space metadata is saved as `<space-slug>.space.yml` files in the base directory.
+
+```bash
+lightdash download [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-c, --charts <charts...>` | Download only the specified charts (slugs, UUIDs, or full URLs) |
+| `-d, --dashboards <dashboards...>` | Download only the specified dashboards (slugs, UUIDs, or full URLs) |
+| `-l, --language-map` | Generate language map files alongside each chart and dashboard |
+| `-p, --path <path>` | Custom output directory (default: `./lightdash`) |
+| `--nested` | Organize files in nested folders: `<project>/<space>/charts/` and `<project>/<space>/dashboards/` |
+| `--project <project uuid>` | Project UUID to download from (defaults to configured project) |
+| `--skip-spaces` | Skip writing `.space.yml` metadata files |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+```bash
+# Download everything from the configured project
+lightdash download
+
+# Download to a custom path using nested folder structure
+lightdash download --path ./content --nested
+
+# Download specific charts by slug
+lightdash download -c weekly-revenue monthly-churn
+
+# Download a dashboard by URL (UUID is extracted automatically)
+lightdash download -d https://app.lightdash.cloud/projects/abc/dashboards/def-123
+```
+
+When downloading dashboards, the CLI also downloads any charts referenced in the dashboard tiles so uploads are self-contained.
+
+---
+
+## `lightdash upload`
+
+Uploads YAML files from a local directory to a Lightdash project. The upload is incremental by default: only files that have been modified since the last download are sent to the API. Use `--force` to upload everything, for example when pushing to a new project.
+
+```bash
+lightdash upload [flags]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+
+| Flag | Description |
+|---|---|
+| `-c, --charts <charts...>` | Force upload only the specified charts (by slug) |
+| `-d, --dashboards <dashboards...>` | Force upload only the specified dashboards (by slug) |
+| `--force` | Upload all files regardless of local changes. Required when uploading to a new project. |
+| `-p, --path <path>` | Custom source directory (default: `./lightdash`) |
+| `--project <project uuid>` | Target project UUID |
+| `--skip-space-create` | Skip creating spaces that do not exist on the target project |
+| `--public` | Create new spaces as public instead of private |
+| `--concurrency <number>` | Number of parallel uploads (default: `1`) |
+| `--include-charts` | Include chart updates when uploading dashboards |
+| `--validate` | Run server-side validation on each chart/dashboard after upload |
+| `--gzip` | Enable gzip compression on request bodies |
+| `--verbose` | Show verbose output |
+
+  </Accordion>
+</AccordionGroup>
+
+```bash
+# Upload changed files to the configured project
+lightdash upload
+
+# Force upload all files to a specific project (e.g., new environment)
+lightdash upload --force --project abc-123-uuid
+
+# Upload with parallel requests for speed
+lightdash upload --concurrency 5
+
+# Upload and validate after each item
+lightdash upload --validate
+```
+
+<Warning>
+When uploading to a new project (one that has never had content), use `--force`. The incremental check uses the `downloadedAt` timestamp from `.lightdash-metadata.json`; without it, nothing is uploaded.
+</Warning>
+
+---
+
+## YAML file format
+
+### Chart YAML
+
+Chart files are stored in the `charts/` directory and named `<slug>.yml`. SQL charts use the `.sql.yml` extension. Every field below corresponds to a property in the `ChartAsCode` type.
+
+```yaml
+chartConfig:
+  config:
+    layout:
+      flipAxes: false
+    series:
+      - color: "#7262ff"
+        type: bar
+  type: cartesian
+contentType: "chart"
+dashboardSlug: null
+description: "Weekly revenue by channel broken down by region."
+metricQuery:
+  additionalMetrics: []
+  dimensions:
+    - "orders.order_date_week"
+    - "orders.channel"
+  exploreName: "orders"
+  filters:
+    dimensions: {}
+    metrics: {}
+    tableCalculations: {}
+  limit: 500
+  metrics:
+    - "orders.total_revenue"
+  sorts:
+    - descending: false
+      fieldId: "orders.order_date_week"
+  tableCalculations: []
+name: "Weekly Revenue by Channel"
+pivotConfig: null
+slug: "weekly-revenue-by-channel"
+spaceSlug: "revenue-analytics"
+tableName: "orders"
+version: 1
+```
+
+Key fields:
+
+| Field | Description |
+|---|---|
+| `contentType` | `"chart"` for regular charts, `"sql_chart"` for SQL charts |
+| `slug` | URL-safe identifier. Used to match files to server-side content on upload. |
+| `spaceSlug` | The space this chart belongs to. The space is created on upload if it doesn't exist (unless `--skip-space-create` is set). |
+| `dashboardSlug` | The dashboard this chart is embedded in, or `null` for standalone charts. |
+| `tableName` | The dbt model (explore) this chart queries. |
+| `metricQuery` | The full metric query: dimensions, metrics, filters, sorts, and table calculations. |
+| `chartConfig` | Chart type and visual configuration (Cartesian, pie, table, big number, etc.). |
+| `version` | Schema version. Currently `1`. |
+| `verified` | `true` to mark verified on upload, `false` to unverify, `undefined` to leave unchanged. |
+
+### SQL chart YAML
+
+SQL charts use a different schema with a raw SQL query instead of a `metricQuery`:
+
+```yaml
+chartKind: "vega_lite"
+contentType: "sql_chart"
+description: "Revenue trend from raw SQL."
+limit: 500
+name: "Revenue Trend (SQL)"
+slug: "revenue-trend-sql"
+spaceSlug: "analytics"
+sql: |
+  SELECT
+    DATE_TRUNC('week', order_date) AS week,
+    SUM(revenue) AS total_revenue
+  FROM orders
+  GROUP BY 1
+  ORDER BY 1
+version: 1
+```
+
+### Dashboard YAML
+
+Dashboard files are stored in the `dashboards/` directory and named `<slug>.yml`.
+
+```yaml
+contentType: "dashboard"
+description: "Executive revenue overview updated weekly."
+filters:
+  dimensions:
+    - fieldId: "orders.order_date"
+      operator: inThePast
+      settings:
+        completed: true
+        unitOfTime: week
+      values: [1]
+name: "Revenue Overview"
+slug: "revenue-overview"
+spaceSlug: "executive"
+tabs: []
+tiles:
+  - h: 6
+    properties:
+      chartSlug: "weekly-revenue-by-channel"
+      hideTitle: false
+      title: ""
+    tileSlug: "tile-abc123"
+    type: "saved_chart"
+    uuid: null
+    w: 12
+    x: 0
+    "y": 0
+  - h: 3
+    properties:
+      content: "## Revenue Summary\nUpdated weekly from the orders model."
+    tileSlug: "tile-def456"
+    type: "markdown"
+    uuid: null
+    w: 12
+    x: 0
+    "y": 6
+version: 1
+```
+
+Key fields:
+
+| Field | Description |
+|---|---|
+| `slug` | Unique identifier for the dashboard. |
+| `spaceSlug` | The space this dashboard lives in. |
+| `tiles` | Array of dashboard tiles. Each tile has a `type` (`saved_chart`, `markdown`, `loom`, `heading`) and `properties`. |
+| `tiles[].properties.chartSlug` | For `saved_chart` tiles, the slug of the referenced chart. |
+| `filters` | Dashboard-level filters applied to all tiles. |
+| `tabs` | Dashboard tab definitions (empty array for single-tab dashboards). |
+| `verified` | Same declarative verification behavior as charts. |
+
+### Space YAML
+
+Space metadata is written as `<space-name>.space.yml` in the base download directory (or the space root in nested mode).
+
+```yaml
+contentType: "space"
+slug: "revenue-analytics"
+spaceName: "Revenue Analytics"
+```
+
+Space files preserve the original space name (including casing and emoji). During upload, the `spaceName` field is used to create or identify the correct space rather than deriving the name from the slug.
+
+---
+
+## Language maps
+
+The `-l` / `--language-map` flag on `lightdash download` generates a companion file for each chart and dashboard that contains all user-visible strings. This is useful for internationalisation (i18n) workflows.
+
+```bash
+lightdash download --language-map
+```
+
+Language map files are named `<slug>.language.map.yml` and sit alongside the content YAML. They are **not** uploaded by `lightdash upload` — they are informational only.
+
+---
+
+## Incremental uploads and `.lightdash-metadata.json`
+
+The download command writes a `.lightdash-metadata.json` file to the root of the download directory. This file records the `downloadedAt` timestamp for every chart and dashboard.
+
+On upload, the CLI compares each file's modification time against its `downloadedAt` timestamp. If the file has been modified since download (more than 30 seconds difference), it is uploaded. Otherwise it is skipped.
+
+```json
+{
+  "version": 1,
+  "charts": {
+    "weekly-revenue-by-channel": "2024-11-15T10:30:00.000Z"
+  },
+  "dashboards": {
+    "revenue-overview": "2024-11-15T10:30:00.000Z"
+  }
+}
+```
+
+<Note>
+Add `.lightdash-metadata.json` to your `.gitignore`. The file contains timestamps that differ between environments and will cause spurious diffs. The CLI prints a reminder the first time the file is written.
+</Note>
+
+---
+
+## CI/CD promotion workflow
+
+A common pattern is to promote content from a staging project to production on merge to the main branch.
+
+```yaml
+name: Promote Content to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lightdash/**'
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lightdash CLI
+        run: npm i -g @lightdash/cli
+
+      - name: Authenticate
+        run: |
+          lightdash login ${{ secrets.LIGHTDASH_URL }} \
+            --token ${{ secrets.LIGHTDASH_API_KEY }} \
+            --non-interactive
+
+      - name: Lint content files
+        run: lightdash lint --path ./lightdash
+
+      - name: Upload to production project
+        run: |
+          lightdash upload \
+            --path ./lightdash \
+            --project ${{ secrets.LIGHTDASH_PROD_PROJECT_UUID }} \
+            --force \
+            --validate
+```
+
+This workflow:
+1. Triggers when YAML files in `lightdash/` change on the `main` branch.
+2. Lints the files against the schema before uploading.
+3. Force-uploads to production (since the metadata timestamps from the developer's machine don't apply in CI).
+4. Validates each chart and dashboard after upload.

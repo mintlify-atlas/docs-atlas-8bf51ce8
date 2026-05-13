@@ -1,0 +1,95 @@
+---
+title: "Lightdash: Agentic BI for dbt teams"
+description: "Lightdash is open-source BI for dbt teams. Define metrics in dbt YAML and surface them as governed, self-service analytics for your whole organization."
+---
+
+Lightdash is an open-source business intelligence platform built for dbt teams. Instead of defining metrics in a separate BI tool, you declare dimensions and metrics directly in your dbt YAML files — and Lightdash automatically surfaces them as a self-service analytics layer for everyone in your organization.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Connect your dbt project and start exploring data in minutes
+  </Card>
+  <Card title="Connect your data" icon="database" href="/connect/dbt-project">
+    Link Lightdash to your dbt project and data warehouse
+  </Card>
+  <Card title="Build charts & dashboards" icon="chart-bar" href="/explore/charts-dashboards">
+    Create visualizations and share insights across your team
+  </Card>
+  <Card title="CLI & developer tools" icon="terminal" href="/developer/cli-overview">
+    Use the Lightdash CLI to compile, preview, and deploy your project
+  </Card>
+</CardGroup>
+
+## Why Lightdash?
+
+Most BI tools require you to redefine your business logic in a separate layer — meaning your data team maintains the same metrics in dbt *and* in the BI tool, which inevitably drift apart. Lightdash eliminates this duplication.
+
+- **Single source of truth** — metrics and dimensions live in your dbt YAML, versioned alongside your data models
+- **Self-service analytics** — business users explore data through pre-defined dimensions and metrics without writing SQL
+- **Developer-native workflow** — preview BI environments, content-as-code, and CI/CD validation fit naturally into existing dbt workflows
+- **Open source** — fully open source under a community license, with an optional cloud offering
+
+## How it works
+
+<Steps>
+  <Step title="Connect your dbt project">
+    Point Lightdash at your dbt project (cloud or CLI) and your data warehouse. Lightdash reads your `manifest.json` to discover all models, dimensions, and metrics.
+  </Step>
+  <Step title="Define metrics in dbt YAML">
+    Add `meta` blocks to your dbt model YAML files to declare dimensions, metrics, and joins. Lightdash automatically picks up these definitions.
+  </Step>
+  <Step title="Explore and visualize">
+    Use the Lightdash Explorer to build charts, apply filters, and create dashboards — all backed by your dbt-defined business logic.
+  </Step>
+  <Step title="Share and schedule">
+    Organize charts into spaces, set permissions, and schedule automated deliveries to Slack or email.
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="dbt-native metrics" icon="cube" href="/connect/metrics-dimensions">
+    Define dimensions and metrics in dbt YAML. No separate metric layer to maintain.
+  </Card>
+  <Card title="Preview environments" icon="eye" href="/developer/preview-environments">
+    Spin up isolated BI environments for every branch with `lightdash preview`.
+  </Card>
+  <Card title="Content as code" icon="code" href="/developer/content-as-code">
+    Download and upload charts and dashboards as YAML files for version control.
+  </Card>
+  <Card title="Scheduled deliveries" icon="clock" href="/share/scheduled-deliveries">
+    Send charts and dashboards to Slack or email on a recurring schedule.
+  </Card>
+  <Card title="Secure embedding" icon="lock" href="/share/embedding">
+    Embed dashboards in your product with JWT-signed, user-scoped URLs.
+  </Card>
+  <Card title="REST API" icon="plug" href="/api/introduction">
+    Automate and integrate with the full Lightdash REST API.
+  </Card>
+</CardGroup>
+
+## Supported data warehouses
+
+Lightdash connects to all major data warehouses out of the box:
+
+- **BigQuery** — Google Cloud BigQuery
+- **Snowflake** — Snowflake Data Cloud
+- **PostgreSQL** — including Amazon RDS and Aurora
+- **Amazon Redshift**
+- **Databricks** — Databricks SQL Warehouses
+- **Amazon Athena**
+- **ClickHouse**
+- **Trino**
+- **DuckDB** — for local development and testing
+
+## Get help
+
+<CardGroup cols={2}>
+  <Card title="Join Slack community" icon="slack" href="https://join.slack.com/t/lightdash-community/shared_invite/zt-2wgtavou8-VRhwXI~QbjCAHQs0WBac3w">
+    Chat with the Lightdash team and community members
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/lightdash/lightdash">
+    File issues, browse source code, and contribute
+  </Card>
+</CardGroup>

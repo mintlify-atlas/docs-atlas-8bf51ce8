@@ -1,81 +1,217 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Get from zero to your first Lightdash chart"
+description: "Get from a blank Lightdash project to a published chart in minutes: sign up, connect dbt, define your first metric in YAML, and share the result."
 ---
 
-## Get started in three steps
+Lightdash turns your existing dbt models into a self-service analytics layer. This guide walks you from account creation through sharing your first chart. If you already have a running Lightdash instance, skip to [step 2](#step-2-connect-your-dbt-project).
 
-Get your documentation site running locally and make your first customization.
+<Tabs>
+  <Tab title="Lightdash Cloud">
+    <Steps>
+      <Step title="Create your account">
+        Go to [app.lightdash.cloud/register](https://app.lightdash.cloud/register) and sign up with your email or Google account.
 
-### Step 1: Set up your local environment
+        After email confirmation, you'll land in the onboarding flow where you'll be prompted to create your first project.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+        <Note>
+          Lightdash Cloud offers a free trial — no credit card required to get started.
+        </Note>
+      </Step>
 
-### Step 2: Deploy your changes
+      <Step title="Connect your dbt project">
+        Lightdash reads your dbt `manifest.json` to discover models, dimensions, and metrics. You can connect in two ways:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+        **Option A — dbt Cloud** (recommended if you already use dbt Cloud):
+        1. In **Project settings**, select **dbt Cloud** as the connection type.
+        2. Enter your dbt Cloud API token and account ID.
+        3. Choose the environment and job whose artifacts Lightdash should read.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+        **Option B — GitHub / GitLab / Bitbucket**:
+        1. Select **GitHub** (or your provider) as the connection type.
+        2. Authorize the Lightdash GitHub app.
+        3. Pick the repository and branch that contains your dbt project.
+        4. Set the **project subdirectory** if your `dbt_project.yml` is not in the repo root.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        After saving, Lightdash compiles your project and lists all discovered models in the left sidebar.
 
-### Step 3: Go live
+        <Tip>
+          Not ready to connect a real warehouse yet? Use the **Lightdash demo project** to explore the interface with pre-built data.
+        </Tip>
+      </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+      <Step title="Add a dimension and metric to dbt YAML">
+        Lightdash reads `meta` blocks from your dbt model YAML files. Open one of your existing model YAML files (for example, `models/orders.yml`) and add dimensions and metrics inside the `meta` key on each column:
+
+        ```yaml
+        version: 2
+
+        models:
+          - name: orders
+            description: One row per order.
+            columns:
+              - name: order_id
+                description: Unique identifier for an order.
+                meta:
+                  dimension:
+                    type: string
+                    label: "Order ID"
+
+              - name: status
+                description: Current fulfillment status of the order.
+                meta:
+                  dimension:
+                    type: string
+                    label: "Order status"
+
+              - name: amount
+                description: Total order amount in USD.
+                meta:
+                  dimension:
+                    type: number
+                    label: "Order amount"
+                  metrics:
+                    total_revenue:
+                      type: sum
+                      label: "Total revenue"
+                      description: "Sum of all order amounts."
+                    average_order_value:
+                      type: average
+                      label: "Average order value"
+        ```
+
+        Save and push the change to the branch Lightdash is connected to. Lightdash refreshes the project and your new metric appears immediately in the Explorer.
+
+        <Info>
+          Lightdash auto-generates a dimension for every column it finds — you only need to add `metrics` when you want aggregations like `sum`, `count`, or `average`.
+        </Info>
+      </Step>
+
+      <Step title="Build your first chart">
+        1. In the left sidebar, click the table (model) you just updated — for example, **Orders**.
+        2. In the **Metrics** list, check **Total revenue**.
+        3. In the **Dimensions** list, check **Order status**.
+        4. Click **Run query**. A table appears with revenue broken down by status.
+        5. Click the **Bar chart** icon in the visualization toolbar to switch to a chart.
+        6. Click **Save chart**, give it a name, and choose a space to save it to.
+
+        <Tip>
+          Use the **Filters** panel to narrow results — for example, filter to a specific date range before saving.
+        </Tip>
+      </Step>
+
+      <Step title="Share your chart">
+        There are two quick ways to share:
+
+        **Share a link**: Click the **Share** button (or copy the URL). Anyone with access to your Lightdash space can open the link and see a live version of the chart.
+
+        **Add to a dashboard**: Open any dashboard (or create one with **+ New dashboard**), click **Add chart**, and select the chart you just saved. Dashboards let you combine multiple charts into a single view.
+
+        **Schedule a delivery**: Click the three-dot menu on a saved chart and choose **Scheduled deliveries** to send it to a Slack channel or email on a recurring schedule.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Self-hosted">
+    <Steps>
+      <Step title="Run Lightdash locally">
+        Clone the repository and run the install script:
+
+        ```bash
+        git clone https://github.com/lightdash/lightdash
+        cd lightdash
+        ./scripts/install.sh
+        ```
+
+        The script starts Docker Compose with Lightdash, PostgreSQL, MinIO (for file storage), and a headless browser. Once it completes, open [http://localhost:8080](http://localhost:8080) and create your admin account.
+
+        <Note>
+          For production deployments, see the [self-hosting overview](/self-hosting/overview) for Docker Compose, Kubernetes, and Render options.
+        </Note>
+      </Step>
+
+      <Step title="Connect your dbt project">
+        After creating your account, the setup wizard walks you through connecting a dbt project. Choose from:
+
+        - **Local dbt project** — mount your project directory into the container and point Lightdash at the path.
+        - **GitHub / GitLab / Bitbucket** — connect via OAuth so Lightdash can pull the latest manifest on each refresh.
+        - **dbt Cloud** — provide a dbt Cloud API token and select the target environment.
+
+        You'll also configure your **warehouse connection** (BigQuery, Snowflake, PostgreSQL, Redshift, Databricks, etc.) during project setup.
+      </Step>
+
+      <Step title="Add a dimension and metric to dbt YAML">
+        Open one of your existing model YAML files and add a `meta` block with dimensions and metrics:
+
+        ```yaml
+        version: 2
+
+        models:
+          - name: orders
+            description: One row per order.
+            columns:
+              - name: order_id
+                meta:
+                  dimension:
+                    type: string
+                    label: "Order ID"
+
+              - name: amount
+                description: Total order amount in USD.
+                meta:
+                  dimension:
+                    type: number
+                    label: "Order amount"
+                  metrics:
+                    total_revenue:
+                      type: sum
+                      label: "Total revenue"
+                    order_count:
+                      type: count_distinct
+                      label: "Number of orders"
+        ```
+
+        After saving, trigger a **Refresh dbt** from **Project settings** (or push to the connected branch) to pick up the changes.
+      </Step>
+
+      <Step title="Build your first chart">
+        1. Click the **Orders** table in the sidebar.
+        2. Check **Total revenue** in Metrics and **Order status** in Dimensions.
+        3. Click **Run query**, then switch to a **Bar chart**.
+        4. Click **Save chart** and place it in a space.
+      </Step>
+
+      <Step title="Share your chart">
+        Copy the chart URL to share with any team member who has access, or add the chart to a dashboard. Use **Scheduled deliveries** on the chart's three-dot menu to send it to Slack or email automatically.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Metric types reference
+
+| Type | dbt YAML value | Description |
+|---|---|---|
+| Sum | `sum` | Sums the column values |
+| Count | `count` | Counts non-null rows |
+| Count distinct | `count_distinct` | Counts unique values |
+| Average | `average` | Computes the mean |
+| Min | `min` | Returns the minimum value |
+| Max | `max` | Returns the maximum value |
+| Percent change | `percent_change` | Period-over-period % change |
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Connect your data" icon="database" href="/connect/dbt-project">
+    Learn all connection options for dbt Cloud, Git, and local projects.
+  </Card>
+  <Card title="Metrics and dimensions" icon="cube" href="/connect/metrics-dimensions">
+    Full reference for every dimension type, metric type, and join configuration.
+  </Card>
+  <Card title="Charts and dashboards" icon="chart-bar" href="/explore/charts-dashboards">
+    Build more complex visualizations with filters, table calculations, and drill-downs.
+  </Card>
+  <Card title="Self-hosting" icon="server" href="/self-hosting/overview">
+    Deploy Lightdash on Docker Compose, Kubernetes, or Render.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

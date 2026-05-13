@@ -1,0 +1,344 @@
+---
+title: "Embedding Lightdash dashboards in your app"
+description: "Embed Lightdash dashboards and charts securely in your own application using JWT-signed URLs, with per-user data filtering and configurable interactivity."
+---
+
+Lightdash embedding lets you display dashboards and charts inside your own application without requiring your users to have a Lightdash account. The embed is secured by a short-lived JSON Web Token (JWT) that your server signs with a secret key. The embedded view is scoped to a single dashboard or chart, carries no organization membership, and exposes only the interactivity options you explicitly enable. This makes it safe to embed analytics into multi-tenant SaaS products where different customers should see different slices of data.
+
+<Info>
+Embedding is an Enterprise feature. A valid Lightdash Enterprise license must be active for the embed configuration UI and the `POST /api/v1/embed/:projectUuid/get-embed-url` endpoint to be available.
+</Info>
+
+## How embedding works
+
+At a high level, the flow is:
+
+1. An admin configures the embed in Lightdash — enabling a dashboard and generating a signing secret.
+2. When one of your users requests a page that contains an embedded dashboard, your **backend server** calls the Lightdash API (or signs the JWT locally) to generate a short-lived embed URL.
+3. Your frontend renders the embed URL in an `<iframe>`.
+4. The Lightdash embed runtime decodes the JWT, builds a sandboxed CASL ability, and renders the dashboard with the permissions and filters specified in the token.
+
+The embed principal is a distinct authentication shape — it has no org membership, no project role, and no session. Its only abilities are those explicitly granted in the JWT payload.
+
+```
+Your App (backend)
+  │
+  ├── POST /api/v1/embed/:projectUuid/get-embed-url  (Lightdash API)
+  │     └── Signs JWT with embed secret → returns { url }
+  │
+  └── Frontend renders <iframe src={url} />
+                                │
+                                └── Lightdash embed runtime
+                                      ├── Verifies JWT signature
+                                      ├── Builds sandboxed CASL ability
+                                      └── Renders dashboard
+```
+
+## Prerequisites
+
+Before generating embed URLs, complete these setup steps:
+
+<Steps>
+  <Step title="Verify your Enterprise license">
+    Go to **Settings → License** and confirm a valid Enterprise license is active. The embedding configuration UI is hidden without a license.
+  </Step>
+  <Step title="Configure allowed embed domains">
+    Go to **Settings → Embedding** (or **Project Settings → Embedding**) and add the domains where your application is hosted. Lightdash enforces `Content-Security-Policy` headers based on this list. For local development, add `http://localhost:3000` (or whichever port you use).
+  </Step>
+  <Step title="Enable the dashboards or charts you want to embed">
+    In the embed configuration, select the dashboards and/or charts that can be embedded. Only content explicitly listed (or all content if `allowAllDashboards`/`allowAllCharts` is set) can be referenced in embed tokens.
+
+    ```typescript
+    type UpdateEmbed = {
+        dashboardUuids: string[];
+        allowAllDashboards: boolean;
+        chartUuids?: string[];
+        allowAllCharts?: boolean;
+    };
+    ```
+  </Step>
+  <Step title="Copy the embed secret">
+    After saving the configuration, Lightdash displays the embed signing secret. Store this secret securely in your backend environment (e.g. as an environment variable). Never expose it to the browser.
+  </Step>
+</Steps>
+
+## Generating embed tokens
+
+Your backend generates an embed URL by calling the Lightdash API with a `CreateEmbedJwt` payload. The API signs the JWT with the embed secret and returns a URL you can pass directly to an `<iframe>`.
+
+### API request
+
+```http
+POST /api/v1/embed/:projectUuid/get-embed-url
+Authorization: ApiKey <your-personal-access-token>
+Content-Type: application/json
+```
+
+### Request body
+
+The full `CreateEmbedJwt` type:
+
+```typescript
+type CreateEmbedJwt = {
+    content:
+        | { type: 'dashboard'; dashboardUuid: string; /* + interactivity options */ }
+        | { type: 'dashboard'; dashboardSlug: string; /* + interactivity options */ }
+        | { type: 'chart'; contentId: string; /* + chart interactivity options */ };
+    userAttributes?: { [key: string]: string }; // Per-user data filters
+    user?: {
+        email?: string;
+        externalId?: string;  // Your app's user ID
+    };
+    expiresIn?: string;  // JWT expiry, e.g. '1h', '30m'
+};
+```
+
+### Minimal dashboard example
+
+```json
+{
+  "content": {
+    "type": "dashboard",
+    "dashboardUuid": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "user": {
+    "externalId": "your-app-user-id-123"
+  },
+  "expiresIn": "1h"
+}
+```
+
+### API response
+
+```json
+{
+  "status": "ok",
+  "results": {
+    "url": "https://your-lightdash.example.com/embed/dashboard?token=eyJ..."
+  }
+}
+```
+
+Pass this URL as the `src` of an `<iframe>` in your frontend:
+
+```html
+<iframe
+  src="https://your-lightdash.example.com/embed/dashboard?token=eyJ..."
+  width="100%"
+  height="600"
+  frameborder="0"
+/>
+```
+
+## JWT structure and fields
+
+The JWT payload encodes a `CommonEmbedJwtContent` object for dashboard embeds:
+
+```typescript
+type CommonEmbedJwtContent = {
+    type: 'dashboard';
+    projectUuid?: string;        // Optional — inferred from the API route
+    isPreview?: boolean;         // Embed a preview project dashboard
+
+    // Interactivity options
+    dashboardFiltersInteractivity?: {
+        enabled: 'all' | 'some' | 'none' | boolean;
+        allowedFilters?: string[] | null; // Specific filter field IDs allowed ('some' mode)
+        hidden?: boolean;                 // Render filters hidden in the UI
+    };
+    parameterInteractivity?: {
+        enabled: boolean;                 // Allow parameter controls to be shown
+    };
+    canExportCsv?: boolean;       // Show the CSV download button
+    canExportImages?: boolean;    // Show the image export button
+    canExportPagePdf?: boolean;   // Show the PDF export button
+    canDateZoom?: boolean;        // Allow date granularity controls
+    canExplore?: boolean;         // Allow drilling into the underlying Explore
+    canViewUnderlyingData?: boolean; // Allow "View underlying data" on chart tiles
+};
+```
+
+All interactivity options default to `false` (disabled) when omitted. You must explicitly opt in to each capability you want your embedded users to have.
+
+### Chart embed content
+
+For chart embeds, the content type differs:
+
+```typescript
+type EmbedJwtContentChart = {
+    type: 'chart';
+    contentId: string;           // savedChartUuid of the chart to embed
+    projectUuid?: string;
+    isPreview?: boolean;
+    scopes?: string[];           // Reserved for future scope-based access
+    canExportCsv?: boolean;
+    canExportImages?: boolean;
+    canViewUnderlyingData?: boolean;
+};
+```
+
+## User-level filtering
+
+The most important use case for embedding in multi-tenant applications is restricting the data each embedded user can see. Lightdash supports this via `userAttributes` in the JWT.
+
+`userAttributes` is a flat key/value map of strings that Lightdash injects as filter values. Your dbt project must define user attribute filters on the relevant models for these to take effect.
+
+```json
+{
+  "content": {
+    "type": "dashboard",
+    "dashboardUuid": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "userAttributes": {
+    "organization_id": "acme-corp",
+    "region": "us-west",
+    "allowed_product_ids": "101,102,103"
+  },
+  "user": {
+    "externalId": "user-456",
+    "email": "alice@acme-corp.com"
+  },
+  "expiresIn": "30m"
+}
+```
+
+In your dbt project, configure user attributes on dimensions or metrics so that Lightdash automatically applies row-level filters based on the JWT values. This ensures that even if an attacker modifies the `<iframe>` URL, the JWT signature prevents tampering with the user attributes.
+
+<Warning>
+User attributes are enforced server-side at query time, not in the browser. The JWT is verified by Lightdash before any data is returned, so you cannot bypass data restrictions by modifying the embed URL.
+</Warning>
+
+## Configuring interactivity
+
+Control what embedded users can do by toggling interactivity options in the JWT content:
+
+<CardGroup cols={2}>
+  <Card title="Filter interactivity" icon="filter">
+    Allow users to change dashboard filters in the embed. Set `dashboardFiltersInteractivity.enabled` to `'all'` (any filter), `'some'` (specific filters by field ID), or `'none'` (no filter changes).
+  </Card>
+  <Card title="CSV export" icon="download">
+    Allow users to download chart data as CSV. Set `canExportCsv: true`. Users can then click the export button on individual chart tiles.
+  </Card>
+  <Card title="Image export" icon="image">
+    Allow users to download chart screenshots. Set `canExportImages: true`.
+  </Card>
+  <Card title="Explore mode" icon="search">
+    Allow users to drill into the underlying Explore view to build ad-hoc queries. Set `canExplore: true`. Use with caution in multi-tenant scenarios.
+  </Card>
+  <Card title="Underlying data" icon="table">
+    Allow users to click "View underlying data" on chart tiles to see row-level results. Set `canViewUnderlyingData: true`.
+  </Card>
+  <Card title="Date zoom" icon="calendar">
+    Allow users to change the date granularity on time-series charts. Set `canDateZoom: true`.
+  </Card>
+</CardGroup>
+
+### Filter interactivity modes
+
+| Value | Behavior |
+|---|---|
+| `'all'` or `true` | Users can change any filter on the dashboard |
+| `'some'` | Users can only change filters whose field IDs are listed in `allowedFilters` |
+| `'none'` or `false` | Dashboard filters are locked; users see the values but cannot change them |
+
+```json
+{
+  "content": {
+    "type": "dashboard",
+    "dashboardUuid": "...",
+    "dashboardFiltersInteractivity": {
+      "enabled": "some",
+      "allowedFilters": ["orders.status", "customers.country"],
+      "hidden": false
+    },
+    "canExportCsv": true
+  }
+}
+```
+
+## Embed URL structure
+
+The URL returned by the API has this structure:
+
+```
+https://<your-lightdash-host>/embed/dashboard?token=<jwt>
+```
+
+The token is a standard signed JWT. It is URL-safe and contains the full embed configuration in its payload. The Lightdash embed runtime extracts the token from the query string, verifies it against the stored embed secret, and builds the sandboxed CASL ability before rendering any content.
+
+<Note>
+The token in the URL is the complete source of truth for what the embedded user can see and do. You do not need to pass any other parameters — the dashboard UUID, user attributes, and interactivity options are all encoded in the token.
+</Note>
+
+## Security best practices
+
+<AccordionGroup>
+  <Accordion title="Keep the embed secret server-side only">
+    The embed signing secret must never leave your backend. Do not include it in frontend JavaScript, environment variables accessible to the browser, or client-side configuration files. If the secret is compromised, rotate it immediately in the Lightdash embed settings — all existing tokens will be invalidated.
+  </Accordion>
+  <Accordion title="Use short token expiry times">
+    Set `expiresIn` to the shortest duration that works for your user sessions — typically `15m` to `1h`. Short-lived tokens reduce the window of opportunity if a token is intercepted. Your backend should generate a fresh token on each page load rather than caching a long-lived one.
+  </Accordion>
+  <Accordion title="Configure allowed domains precisely">
+    Only add the exact domains where your application is hosted to the embed domain allowlist. Avoid wildcards. In production, remove `localhost` entries that you added during development.
+  </Accordion>
+  <Accordion title="Set user attributes for every embedded user">
+    In multi-tenant applications, always populate `userAttributes` with the values needed to restrict the data to the current user's organization or tenant. A JWT without user attributes will expose all data in the dashboard to the embedded user.
+  </Accordion>
+  <Accordion title="Include an externalId for every embedded user">
+    The `user.externalId` field identifies the embedded user in Lightdash's logs and job ownership tracking (e.g. for CSV export jobs). Using a stable identifier from your system makes it possible to trace and audit activity per user.
+  </Accordion>
+  <Accordion title="Rotate secrets on suspected compromise">
+    If you suspect the embed secret has been exposed, go to **Project Settings → Embedding**, generate a new secret, and redeploy your backend with the updated value. All embed URLs generated with the old secret will immediately stop working.
+  </Accordion>
+</AccordionGroup>
+
+## Managing the embed configuration
+
+### Updating allowed content
+
+Use `PATCH /api/v1/embed/:projectUuid/config` to update which dashboards and charts can be embedded:
+
+```json
+{
+  "dashboardUuids": ["uuid-1", "uuid-2"],
+  "allowAllDashboards": false,
+  "chartUuids": ["chart-uuid-1"],
+  "allowAllCharts": false
+}
+```
+
+Setting `allowAllDashboards: true` allows any dashboard in the project to be embedded, which is convenient during development but not recommended for production.
+
+### Fetching the current configuration
+
+```http
+GET /api/v1/embed/:projectUuid/config
+Authorization: ApiKey <your-personal-access-token>
+```
+
+The response includes the decoded embed configuration (secret is not returned):
+
+```typescript
+type DecodedEmbed = Omit<Embed, 'encodedSecret'> & {
+    encodedSecret: undefined;
+    secret: string; // The plaintext secret, shown once at creation
+};
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The iframe shows a blank page or CORS error">
+    Check that your application's domain is listed in the embed domain allowlist under **Project Settings → Embedding**. The domain must match exactly (including protocol and port). Also verify the token has not expired — tokens are short-lived by design.
+  </Accordion>
+  <Accordion title="'Dashboard not found' error in the embed">
+    The `dashboardUuid` in the JWT content must match a dashboard that has been explicitly enabled in the embed configuration. Make sure you have added the dashboard to the allowed list and saved the configuration.
+  </Accordion>
+  <Accordion title="User attribute filters are not being applied">
+    Confirm that your dbt project has user attribute filters configured on the relevant models. The `userAttributes` in the JWT are only enforced when Lightdash finds matching user attribute filter rules in the project. If no rules reference the attribute key, it is silently ignored.
+  </Accordion>
+  <Accordion title="'Invalid token' or 'JWT signature verification failed'">
+    Verify that your backend is using the correct embed secret. If you have recently rotated the secret, make sure all backend services have been updated with the new value. Also check that your server's system clock is accurate — JWT expiry validation is time-sensitive.
+  </Accordion>
+</AccordionGroup>
